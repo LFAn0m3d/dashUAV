@@ -78,6 +78,14 @@ function byTsDesc(a, b) {
   return 0;
 }
 
+function headingToCardinal(heading) {
+  if (!Number.isFinite(heading)) return null;
+  const normalized = ((heading % 360) + 360) % 360;
+  const dirs = ["N", "NE", "E", "SE", "S", "SW", "W", "NW"];
+  const idx = Math.round(normalized / 45) % dirs.length;
+  return dirs[idx];
+}
+
 function eventKey(evt) {
   if (!evt) return "";
   if (evt.type && evt.type.startsWith("detection") && evt.payload?.detection_id) {
@@ -511,10 +519,10 @@ function MapPanel({ detections, telemetry, onSelectItem, filter, forecast }) {
         if (typeof p.lat === 'number' && typeof p.lon === 'number') {
           const [jLat, jLon] = jitterCoordinates(p.lat, p.lon, jitterTracker);
           const m = L.circleMarker([jLat, jLon], {
-            radius: 6,
-            color: '#2563eb',
+            radius: 7,
+            color: '#1b4332',
             weight: 2,
-            fillColor: '#93c5fd',
+            fillColor: '#2d6a4f',
             fillOpacity: 0.9,
           }).addTo(droneLayer);
           m.bindTooltip(`${p.drone_id || 'DRONE'}\n${p.lat.toFixed(5)}, ${p.lon.toFixed(5)}`);
@@ -529,16 +537,20 @@ function MapPanel({ detections, telemetry, onSelectItem, filter, forecast }) {
         if (typeof p.lat === 'number' && typeof p.lon === 'number') {
           const [jLat, jLon] = jitterCoordinates(p.lat, p.lon, jitterTracker);
           const m = L.circleMarker([jLat, jLon], {
-            radius: 7,
-            color: '#dc2626',
+            radius: 8,
+            color: '#f59f00',
             weight: 2,
-            fillColor: '#fecaca',
-            fillOpacity: 0.95,
+            fillColor: '#ffe066',
+            fillOpacity: 0.9,
           }).addTo(detLayer);
           const img = p.snapshot_url || 'https://placehold.co/400x200?text=Threat+Detected';
+          const dirDeg = Number.isFinite(p.bearing) ? p.bearing : Number.isFinite(p.heading) ? p.heading : null;
+          const dirLabel = headingToCardinal(dirDeg);
+          const directionText = dirDeg === null ? 'Direction: N/A' : `Direction: ${Math.round(dirDeg)}°${dirLabel ? ` (${dirLabel})` : ''}`;
           m.bindPopup(`<div style=\"min-width:240px\"><strong>${p.category || 'THREAT'}</strong><br/>`
+            + `${directionText}<br/>`
             + `Lat ${p.lat?.toFixed(5)}, Lon ${p.lon?.toFixed(5)}<br/>`
-            + `<img src=\"${img}\" style=\"width:100%;margin-top:6px;border-radius:8px\"/></div>`);
+            + `<img src=\"${img}\" style=\"width:100%;margin-top:6px;border-radius:8px;border:2px solid #f59f00;box-shadow:0 0 12px rgba(0,0,0,0.45)\"/></div>`);
           m.on('click', () => onSelectItem && onSelectItem({ type: 'detection', data: d }));
         }
       });
@@ -551,8 +563,8 @@ function MapPanel({ detections, telemetry, onSelectItem, filter, forecast }) {
         const len = 0.01; // short arrow
         const rad = (wind.sfc_deg - 90) * Math.PI/180;
         const end = [lat + len*Math.sin(rad), lon + len*Math.cos(rad)];
-        L.polyline([[lat, lon], end], { color:'#0ea5e9', weight:4, opacity:0.9 }).addTo(windLayer);
-        L.circleMarker([lat, lon], { radius:5, color:'#0284c7', fillColor:'#7dd3fc', fillOpacity:1 })
+        L.polyline([[lat, lon], end], { color:'#ffba08', weight:4, opacity:0.9 }).addTo(windLayer);
+        L.circleMarker([lat, lon], { radius:5, color:'#ffba08', fillColor:'#ffe066', fillOpacity:1 })
           .addTo(windLayer)
           .bindTooltip(`Wind ${wind.sfc_ms.toFixed(1)} m/s • ${wind.sfc_deg}° (Bft ${beaufortFromMs(wind.sfc_ms)})`);
       }
@@ -582,58 +594,65 @@ function MapPanel({ detections, telemetry, onSelectItem, filter, forecast }) {
   }, [filter, safeTelemetry, safeDetections]);
 
   return (
-    <div className="relative w-full h-full rounded-xl overflow-hidden shadow-lg">
+    <div className="relative w-full h-full rounded-2xl overflow-hidden shadow-[0_0_30px_rgba(0,0,0,0.45)] border border-[#1f3d2b] bg-[#06100c]">
       {/* Map container */}
-      <div ref={mapDivRef} className="absolute inset-0 bg-gray-100" />
+      <div ref={mapDivRef} className="absolute inset-0 bg-[#06100c]" />
 
       {/* Map title */}
-      <div className="absolute top-3 left-3 bg-white/95 backdrop-blur px-3 py-2 rounded-lg shadow-md z-10">
-        <div className="font-bold text-gray-800 flex items-center gap-2">
+      <div className="absolute top-3 left-3 bg-[#10231c]/95 backdrop-blur px-4 py-3 rounded-lg shadow-lg z-10 border border-[#1f3d2b] text-green-100">
+        <div className="font-bold tracking-wide flex items-center gap-2 uppercase text-sm">
           <span className="text-lg">🗺️</span>
-          <span>Live Map (OpenStreetMap)</span>
+          <span>Tactical Map • OSM</span>
         </div>
-        <div className="text-xs text-gray-600 mt-1">Bangkok, Thailand</div>
+        <div className="text-[11px] text-green-200/70 mt-1">Bangkok AO • Defensive Grid</div>
         {forecast && (
-          <div className="mt-2 text-xs">
-            <span className={`px-2 py-0.5 rounded font-semibold ${forecast.goNoGo === 'GO' ? 'bg-green-100 text-green-700' : forecast.goNoGo === 'CAUTION' ? 'bg-yellow-100 text-yellow-700' : 'bg-red-100 text-red-700'}`}>
+          <div className="mt-2 text-[11px] flex items-center gap-2">
+            <span className={`px-2 py-0.5 rounded font-semibold border ${forecast.goNoGo === 'GO' ? 'bg-[#0f3d2e] border-[#1f8a5b] text-[#95d5b2]' : forecast.goNoGo === 'CAUTION' ? 'bg-[#3f341f] border-[#ffba08] text-[#ffba08]' : 'bg-[#3d1f1f] border-[#f87171] text-[#fca5a5]'}`}>
               {forecast.goNoGo}
             </span>
-            <span className="ml-2 text-gray-600">Wind {forecast.wind?.sfc_ms?.toFixed?.(1)} m/s • {forecast.wind?.sfc_deg}°</span>
+            <span className="text-green-200/70">Wind {forecast.wind?.sfc_ms?.toFixed?.(1)} m/s • {forecast.wind?.sfc_deg}°</span>
           </div>
         )}
       </div>
 
       {/* Side list */}
-      <div className="absolute right-3 top-3 bg-white/95 backdrop-blur rounded-lg shadow-lg divide-y z-20 max-w-xs max-h-[75vh] overflow-hidden flex flex-col">
-        <div className="px-3 py-2 font-bold text-gray-800 bg-gray-50 flex items-center justify-between">
-          <span>📍 Markers</span>
-          <span className="bg-blue-600 text-white text-xs px-2 py-0.5 rounded-full">
+      <div className="absolute right-3 top-3 bg-[#10231c]/95 backdrop-blur rounded-xl shadow-2xl border border-[#1f3d2b] z-20 max-w-xs max-h-[75vh] overflow-hidden flex flex-col text-green-100">
+        <div className="px-4 py-3 font-bold tracking-wide text-sm bg-[#0b1b14] flex items-center justify-between border-b border-[#1f3d2b] uppercase">
+          <span>Target Watch</span>
+          <span className="bg-[#2d6a4f] text-xs px-2 py-0.5 rounded-full font-mono text-green-100">
             {(showDetections ? safeDetections.length : 0) + (showTelemetry ? safeTelemetry.length : 0)}
           </span>
         </div>
 
-        <div className="overflow-auto flex-1">
+        <div className="overflow-auto flex-1 px-3 py-2 space-y-3">
           {showTelemetry && safeTelemetry.length > 0 && (
-            <div className="p-2 space-y-1">
-              <div className="text-xs font-bold text-blue-600 mb-2 flex items-center gap-1">
-                <span>🛩️</span>
-                <span>Offensive Drone</span>
+            <div className="space-y-2">
+              <div className="text-[11px] font-semibold text-[#74c69d] flex items-center gap-2 uppercase tracking-widest">
+                <span className="text-sm">🛩️</span>
+                <span>Blue Force</span>
               </div>
               {safeTelemetry.map((t) => {
                 const p = safePayload(t.payload);
+                const headingDeg = Number.isFinite(p.heading) ? p.heading : null;
+                const headingLabel = headingDeg === null ? '—' : `${Math.round(headingDeg)}° ${headingToCardinal(headingDeg) || ''}`.trim();
                 return (
                   <div
                     key={t.id}
-                    className="bg-blue-50 hover:bg-blue-100 rounded-lg cursor-pointer px-3 py-2 text-xs transition shadow-sm border border-blue-200"
+                    className="bg-[#0f241a] hover:bg-[#133024] rounded-lg cursor-pointer px-3 py-3 text-xs transition shadow border border-[#1f3d2b]"
                     onClick={() => onSelectItem && onSelectItem({ type: "telemetry", data: t })}
                   >
-                    <div className="font-bold text-blue-900">{p.drone_id}</div>
-                    <div className="text-blue-700 mt-1">
-                      📍 {p.lat?.toFixed(5)}, {p.lon?.toFixed(5)}
+                    <div className="flex items-center justify-between text-[13px] font-bold text-[#95d5b2]">
+                      <span>{p.drone_id}</span>
+                      <span className="text-[10px] text-green-200">{formatLocal(tsToDate(t.ts)).split(' ')[1]}</span>
                     </div>
-                    <div className="text-blue-700 flex items-center gap-2 mt-1">
-                      <span>↗️ {Math.round(p.heading || 0)}°</span>
-                      <span>•</span>
+                    <div className="mt-2 font-mono text-[11px] text-green-100">
+                      LAT {p.lat?.toFixed(5)}
+                      <br />
+                      LON {p.lon?.toFixed(5)}
+                    </div>
+                    <div className="text-[#74c69d] flex items-center gap-3 mt-2 text-[11px]">
+                      <span>↗️ {headingLabel}</span>
+                      <span className="opacity-70">•</span>
                       <span>🔋 {p.battery}%</span>
                     </div>
                   </div>
@@ -643,27 +662,43 @@ function MapPanel({ detections, telemetry, onSelectItem, filter, forecast }) {
           )}
 
           {showDetections && safeDetections.length > 0 && (
-            <div className="p-2 space-y-1 border-t">
-              <div className="text-xs font-bold text-red-600 mb-2 flex items-center gap-1">
-                <span>🎯</span>
-                <span>Threats</span>
+            <div className="space-y-2 pt-2 border-t border-[#1f3d2b]">
+              <div className="text-[11px] font-semibold text-[#ffba08] flex items-center gap-2 uppercase tracking-widest">
+                <span className="text-sm">🎯</span>
+                <span>Incoming Threats</span>
               </div>
               {safeDetections.slice(0, 8).map((d) => {
                 const p = safePayload(d.payload);
+                const dirDeg = Number.isFinite(p.bearing) ? p.bearing : Number.isFinite(p.heading) ? p.heading : null;
+                const dirLabel = dirDeg === null ? 'N/A' : `${Math.round(dirDeg)}° ${headingToCardinal(dirDeg) || ''}`.trim();
+                const confPercent = Number.isFinite(p.confidence) ? Math.round(p.confidence * 100) : 0;
                 return (
                   <div
                     key={d.id}
-                    className="bg-red-50 hover:bg-red-100 rounded-lg cursor-pointer px-3 py-2 text-xs transition shadow-sm border border-red-200"
+                    className="bg-[#2b2717] hover:bg-[#3a341f] rounded-lg cursor-pointer p-3 text-xs transition shadow border border-[#ffba08]/40"
                     onClick={() => onSelectItem && onSelectItem({ type: "detection", data: d })}
                   >
-                    <div className="font-bold text-red-900">{p.category}</div>
-                    <div className="text-red-700 mt-1">
-                      📍 {p.lat?.toFixed(5)}, {p.lon?.toFixed(5)}
-                    </div>
-                    <div className="text-red-700 flex items-center gap-2 mt-1">
-                      <span>📷 {p.source}</span>
-                      <span>•</span>
-                      <span>✓ {(p.confidence * 100).toFixed(0)}%</span>
+                    <div className="flex items-start gap-3">
+                      <div className="w-16 h-12 rounded border border-[#ffba08]/50 overflow-hidden flex-shrink-0 bg-black/40">
+                        <img
+                          src={p.snapshot_url || 'https://placehold.co/160x120?text=CAM'}
+                          alt="detection"
+                          className="w-full h-full object-cover"
+                        />
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <div className="font-bold text-[#ffba08] text-[13px] truncate">{p.category || 'UNKNOWN'}</div>
+                        <div className="text-[11px] text-yellow-100 mt-1">
+                          LAT {p.lat?.toFixed(5)} • LON {p.lon?.toFixed(5)}
+                        </div>
+                        <div className="text-[11px] text-yellow-200 mt-1 flex flex-wrap gap-2 items-center">
+                          <span>↗️ {dirLabel}</span>
+                          <span className="opacity-70">•</span>
+                          <span>📷 {p.source || 'UNKNOWN'}</span>
+                          <span className="opacity-70">•</span>
+                          <span>CONF {confPercent}%</span>
+                        </div>
+                      </div>
                     </div>
                   </div>
                 );
@@ -672,9 +707,9 @@ function MapPanel({ detections, telemetry, onSelectItem, filter, forecast }) {
           )}
 
           {(!showTelemetry || safeTelemetry.length === 0) && (!showDetections || safeDetections.length === 0) && (
-            <div className="text-gray-400 px-3 py-8 text-center text-sm">
+            <div className="text-[#4d6b5b] px-3 py-8 text-center text-sm border border-dashed border-[#1f3d2b] rounded-lg bg-[#0f241a]">
               <div className="text-2xl mb-2">⏳</div>
-              <div>Waiting for data…</div>
+              <div>Awaiting Tactical Feed…</div>
             </div>
           )}
         </div>
@@ -689,7 +724,7 @@ function MapPanel({ detections, telemetry, onSelectItem, filter, forecast }) {
 function TimeStampBlock({ ts }) {
   const d = tsToDate(ts);
   return (
-    <div className="text-[10px] text-gray-500 bg-gray-50 px-2 py-1 rounded">
+    <div className="text-[10px] text-green-100 bg-[#1b2b23] px-2 py-1 rounded border border-[#1f3d2b] font-mono">
       <div>🕐 {formatLocal(d)}</div>
     </div>
   );
@@ -707,40 +742,54 @@ const FeedItem = React.memo(function FeedItem({ item, onClick }) {
   const imgSrc = isDetection
     ? (payload.snapshot_url || "https://placehold.co/400x200?text=Threat+Detected")
     : null;
+  const directionDeg = Number.isFinite(payload.bearing)
+    ? payload.bearing
+    : (Number.isFinite(payload.heading) ? payload.heading : null);
+  const directionLabel = directionDeg === null ? null : `${Math.round(directionDeg)}° ${headingToCardinal(directionDeg) || ""}`.trim();
+  const confidencePercent = Number.isFinite(payload.confidence) ? Math.round(payload.confidence * 100) : 0;
+  const friendlyHeading = Number.isFinite(payload.heading)
+    ? `${Math.round(payload.heading)}° ${headingToCardinal(payload.heading) || ""}`.trim()
+    : 'N/A';
 
   return (
     <div
-      className={`border-2 ${isDetection ? "border-red-200 bg-red-50 hover:bg-red-100 hover:border-red-300" : "border-blue-200 bg-blue-50 hover:bg-blue-100 hover:border-blue-300"} rounded-lg p-3 transition cursor-pointer shadow-sm`}
+      className={`border ${isDetection
+        ? "border-[#ffba08]/50 bg-[#2b2717] hover:bg-[#3a341f]"
+        : "border-[#1f3d2b] bg-[#0f241a] hover:bg-[#133024]"} rounded-xl p-4 transition cursor-pointer shadow-lg text-green-50`}
       onClick={onClick}
     >
       {isDetection && imgSrc && (
-        <img src={imgSrc} alt="threat" className="w-full rounded-md mb-2 shadow" />
+        <img src={imgSrc} alt="threat" className="w-full rounded-md mb-3 shadow-lg border border-[#ffba08]/40" />
       )}
       <div className="flex items-start justify-between mb-2">
         <div className="flex items-center gap-2">
-          <span className="text-lg">{isDetection ? "🎯" : "🛩️"}</span>
-          <div>
-            <div className={`font-bold ${isDetection ? "text-red-900" : "text-blue-900"}`}>
+          <span className="text-xl">{isDetection ? "🎯" : "🛩️"}</span>
+          <div className="space-y-0.5">
+            <div className={`font-extrabold tracking-wide ${isDetection ? "text-[#ffba08]" : "text-[#74c69d]"}`}>
               {isDetection ? payload.category : payload.drone_id}
             </div>
-            <div className={`text-xs ${isDetection ? "text-red-700" : "text-blue-700"}`}>
-              {isDetection ? "Threat" : "Offensive Drone"}
+            <div className={`text-[11px] uppercase tracking-widest ${isDetection ? "text-yellow-200" : "text-green-200/80"}`}>
+              {isDetection ? "Defense Alert" : "Blue Force Telemetry"}
             </div>
           </div>
         </div>
         <TimeStampBlock ts={item.ts} />
       </div>
-      <div className="text-sm text-gray-700 space-y-1">
-        <div>📍 {payload.lat?.toFixed(5)}, {payload.lon?.toFixed(5)}</div>
+      <div className="text-sm space-y-2">
+        <div className="font-mono text-[12px] text-green-100">
+          LAT {payload.lat?.toFixed(5)} • LON {payload.lon?.toFixed(5)}
+        </div>
         {isDetection ? (
-          <div className="flex items-center gap-2 text-xs">
-            <span>📷 {payload.source}</span>
-            <span>•</span>
-            <span>✓ {(payload.confidence * 100).toFixed(0)}%</span>
+          <div className="flex flex-wrap gap-3 items-center text-[11px] text-yellow-100">
+            <span>↗️ {directionLabel || 'N/A'}</span>
+            <span className="opacity-60">•</span>
+            <span>📷 {payload.source || 'UNKNOWN'}</span>
+            <span className="opacity-60">•</span>
+            <span>CONF {confidencePercent}%</span>
           </div>
         ) : (
-          <div className="flex items-center gap-3">
-            <span>↗️ {Math.round(payload.heading || 0)}°</span>
+          <div className="flex flex-wrap gap-3 text-[11px] text-[#74c69d] items-center">
+            <span>↗️ {friendlyHeading}</span>
             <span>⚡ {payload.speed?.toFixed(1)} m/s</span>
             <span>🔋 {payload.battery}%</span>
           </div>
@@ -769,9 +818,9 @@ function FeedPanel({ items, onSelect, filter }) {
         <FeedItem key={it.id} item={it} onClick={() => onSelect && onSelect(it)} />
       ))}
       {filtered.length === 0 && (
-        <div className="text-center py-12 text-gray-400">
+        <div className="text-center py-12 text-green-200/40 border border-dashed border-[#1f3d2b] rounded-lg bg-[#0f241a]">
           <div className="text-4xl mb-2">📭</div>
-          <div>No data</div>
+          <div>Standing by for intel…</div>
         </div>
       )}
     </div>
@@ -787,32 +836,32 @@ function AnalyticsPanel({ analytics, onSelect }) {
   const categoryEntries = Object.entries(detectionCategories || {});
 
   return (
-    <div className="space-y-3">
+    <div className="space-y-3 text-green-100">
       <div className="grid grid-cols-2 gap-3">
-        <div className="rounded-lg border bg-white p-3 shadow-sm">
-          <div className="text-xs text-gray-500 uppercase">Active Drones</div>
-          <div className="text-2xl font-bold text-blue-600">{summary.uniqueDrones}</div>
-          <div className="text-xs text-gray-500 mt-1">Telemetry {summary.totalTelemetry}</div>
+        <div className="rounded-lg border border-[#1f3d2b] bg-[#0f241a] p-3 shadow">
+          <div className="text-[11px] uppercase tracking-widest text-[#74c69d]">Active Drones</div>
+          <div className="text-3xl font-extrabold text-[#95d5b2] mt-1">{summary.uniqueDrones}</div>
+          <div className="text-[11px] text-green-200/80 mt-2 font-mono">Telemetry {summary.totalTelemetry}</div>
         </div>
-        <div className="rounded-lg border bg-white p-3 shadow-sm">
-          <div className="text-xs text-gray-500 uppercase">Threat Detections</div>
-          <div className="text-2xl font-bold text-red-600">{summary.totalDetections}</div>
-          <div className="text-xs text-gray-500 mt-1">
+        <div className="rounded-lg border border-[#3f2d14] bg-[#2b2717] p-3 shadow">
+          <div className="text-[11px] uppercase tracking-widest text-[#ffba08]">Threat Detections</div>
+          <div className="text-3xl font-extrabold text-[#ffba08] mt-1">{summary.totalDetections}</div>
+          <div className="text-[11px] text-yellow-200/90 mt-2 font-mono">
             Avg Speed {summary.hasSpeedSamples ? `${summary.avgSpeed.toFixed(1)} m/s` : '—'}
           </div>
         </div>
       </div>
 
-      <div className="rounded-lg border bg-white p-3 shadow-sm">
-        <div className="text-xs text-gray-500 uppercase">Categories</div>
+      <div className="rounded-lg border border-[#1f3d2b] bg-[#0f241a] p-3 shadow">
+        <div className="text-[11px] uppercase tracking-widest text-[#74c69d]">Threat Categories</div>
         <div className="flex flex-wrap gap-2 mt-2">
           {categoryEntries.length === 0 && (
-            <span className="text-xs text-gray-500">No detections yet</span>
+            <span className="text-xs text-green-200/60">No detections yet</span>
           )}
           {categoryEntries.map(([cat, count]) => (
             <span
               key={cat}
-              className="px-2 py-1 text-xs rounded-full border border-red-200 bg-red-50 text-red-700"
+              className="px-2 py-1 text-[11px] rounded-full border border-[#ffba08]/40 bg-[#2b2717] text-yellow-100 font-mono"
             >
               {cat} • {count}
             </span>
@@ -821,28 +870,28 @@ function AnalyticsPanel({ analytics, onSelect }) {
       </div>
 
       {overlaps.length > 0 && (
-        <div className="rounded-lg border bg-white p-3 shadow-sm">
-          <div className="text-xs text-gray-500 uppercase">Overlapping Threat Areas</div>
+        <div className="rounded-lg border border-[#3f2d14] bg-[#2b2717] p-3 shadow">
+          <div className="text-[11px] uppercase tracking-widest text-[#ffba08]">Overlapping Threat Areas</div>
           <ul className="mt-2 space-y-2">
             {overlaps.slice(0, 5).map((group, idx) => (
               <li key={idx}>
                 <button
                   type="button"
                   onClick={() => onSelect && onSelect(group.primary)}
-                  className="w-full text-left bg-red-50/60 hover:bg-red-100 border border-red-200 rounded-lg px-3 py-2 transition"
+                  className="w-full text-left bg-[#3d341f] hover:bg-[#4a3f26] border border-[#ffba08]/40 rounded-lg px-3 py-2 transition text-yellow-100"
                 >
-                  <div className="text-sm font-semibold text-red-700">
+                  <div className="text-sm font-semibold text-[#ffba08]">
                     Cluster #{idx + 1} • {group.count} detections
                   </div>
-                  <div className="text-xs text-gray-600 mt-1">
+                  <div className="text-[11px] text-yellow-100 mt-1 font-mono">
                     📍 {group.lat.toFixed(4)}, {group.lon.toFixed(4)}
                   </div>
-                  <div className="text-xs text-gray-500 mt-1 flex flex-wrap gap-2">
+                  <div className="text-[11px] text-yellow-200/90 mt-1 flex flex-wrap gap-2">
                     {Object.entries(group.categories).map(([cat, count]) => (
                       <span key={cat}>{cat}: {count}</span>
                     ))}
                   </div>
-                  <div className="text-[10px] text-gray-400 mt-1">
+                  <div className="text-[10px] text-yellow-200/60 mt-1">
                     Latest: {formatLocal(tsToDate(group.latestTs))}
                   </div>
                 </button>
@@ -862,120 +911,128 @@ function DetailDrawer({ item, onClose, onOpenImage, forecast }) {
   if (!item) return null;
   const isDet = item.type && item.type.startsWith("detection");
   const p = safePayload(item.payload);
+  const directionDeg = isDet ? (Number.isFinite(p.bearing) ? p.bearing : (Number.isFinite(p.heading) ? p.heading : null)) : null;
+  const directionLabel = directionDeg === null ? 'N/A' : `${Math.round(directionDeg)}° ${headingToCardinal(directionDeg) || ''}`.trim();
+  const confidencePercent = Number.isFinite(p.confidence) ? Math.round(p.confidence * 100) : 0;
 
   return (
-    <div className="fixed right-0 top-0 h-full w-[420px] bg-white shadow-2xl border-l z-50 flex flex-col">
-      <div className="p-4 border-b bg-gradient-to-r from-gray-50 to-white flex items-center justify-between">
+    <div className="fixed right-0 top-0 h-full w-[420px] bg-[#0b1b14] text-green-100 shadow-[0_0_30px_rgba(0,0,0,0.45)] border-l border-[#1f3d2b] z-50 flex flex-col">
+      <div className="p-4 border-b border-[#1f3d2b] bg-gradient-to-r from-[#0b1b14] to-[#10231c] flex items-center justify-between">
         <div className="flex items-center gap-3">
-          <span className="text-2xl">{isDet ? "🎯" : "🛩️"}</span>
+          <span className="text-3xl">{isDet ? "🎯" : "🛩️"}</span>
           <div>
-            <div className="font-bold text-lg">{isDet ? "Threat" : "Offensive Drone"}</div>
-            <div className="text-xs text-gray-600">{isDet ? "Defense Team" : "Offense Team"}</div>
+            <div className="font-bold text-xl tracking-wide text-[#95d5b2]">{isDet ? "Threat Intel" : "Blue Force Asset"}</div>
+            <div className="text-[11px] uppercase tracking-[0.2em] text-green-200/60">{isDet ? "Defense Channel" : "Operations"}</div>
           </div>
         </div>
         <button
-          className="text-gray-500 hover:text-black text-xl font-bold px-3 py-1 hover:bg-gray-100 rounded"
+          className="text-green-200 hover:text-white text-xl font-bold px-3 py-1 hover:bg-[#143626] rounded"
           onClick={onClose}
         >
           ✕
         </button>
       </div>
 
-      <div className="p-4 space-y-4 overflow-auto flex-1">
+      <div className="p-5 space-y-4 overflow-auto flex-1 bg-[#0f241a]">
         {forecast && (
           <div className="grid grid-cols-2 gap-3">
-            <div className={`rounded-lg p-3 border text-center font-bold ${forecast.goNoGo === 'GO' ? 'bg-green-50 border-green-200 text-green-700' : forecast.goNoGo === 'CAUTION' ? 'bg-yellow-50 border-yellow-200 text-yellow-800' : 'bg-red-50 border-red-200 text-red-700'}`}>
+            <div className={`rounded-lg p-3 border text-center font-bold text-[13px] ${forecast.goNoGo === 'GO' ? 'bg-[#0f3d2e] border-[#1f8a5b] text-[#95d5b2]' : forecast.goNoGo === 'CAUTION' ? 'bg-[#3f341f] border-[#ffba08] text-[#ffba08]' : 'bg-[#3d1f1f] border-[#f87171] text-[#fca5a5]'}`}>
               {forecast.goNoGo} • Wind {forecast.wind?.sfc_ms?.toFixed?.(1)} m/s {forecast.wind?.sfc_deg}°
             </div>
-            <div className="rounded-lg p-3 border bg-gray-50">
-              <div className="text-xs text-gray-600 mb-1">GNSS (Kp)</div>
-              <div className="font-semibold">Kp {forecast.kp_index ?? '-'}</div>
+            <div className="rounded-lg p-3 border border-[#1f3d2b] bg-[#13281f]">
+              <div className="text-[11px] text-green-200/80 mb-1 uppercase tracking-widest">GNSS (Kp)</div>
+              <div className="font-semibold text-[#95d5b2]">Kp {forecast.kp_index ?? '-'}</div>
             </div>
           </div>
         )}
-        <div className="bg-gray-50 rounded-lg p-3 border">
-          <div className="text-xs text-gray-600 mb-1">Time</div>
+        <div className="bg-[#13281f] rounded-lg p-3 border border-[#1f3d2b]">
+          <div className="text-[11px] text-green-200/80 mb-1 uppercase tracking-widest">Time Stamp</div>
           <TimeStampBlock ts={item.ts} />
         </div>
 
         {isDet ? (
           <>
-            <div className="bg-red-50 rounded-lg p-3 border border-red-200">
-              <div className="text-xs text-red-600 mb-1">Type</div>
-              <div className="font-bold text-red-900 text-lg">{p.category}</div>
+            <div className="bg-[#3f2d14] rounded-lg p-3 border border-[#ffba08]/60">
+              <div className="text-[11px] text-[#ffba08] mb-1 uppercase tracking-widest">Classification</div>
+              <div className="font-bold text-[#ffba08] text-lg">{p.category}</div>
             </div>
 
-            <div className="bg-gray-50 rounded-lg p-3 border">
-              <div className="text-xs text-gray-600 mb-1">Confidence</div>
-              <div className="font-bold text-lg">{(p.confidence * 100).toFixed(0)}%</div>
-              <div className="w-full bg-gray-200 rounded-full h-2 mt-2">
+            <div className="bg-[#13281f] rounded-lg p-3 border border-[#1f3d2b]">
+              <div className="text-[11px] text-green-200/80 mb-1 uppercase tracking-widest">Confidence</div>
+              <div className="font-bold text-lg text-[#95d5b2]">{confidencePercent}%</div>
+              <div className="w-full bg-[#1f3d2b] rounded-full h-2 mt-2">
                 <div
-                  className="bg-red-600 h-2 rounded-full transition-all"
-                  style={{ width: `${p.confidence * 100}%` }}
+                  className="bg-[#ffba08] h-2 rounded-full transition-all"
+                  style={{ width: `${confidencePercent}%` }}
                 />
               </div>
             </div>
 
-            <div className="bg-gray-50 rounded-lg p-3 border">
-              <div className="text-xs text-gray-600 mb-1">Location</div>
-              <div className="font-mono text-sm">
-                <div>📍 Lat: {p.lat?.toFixed(6)}</div>
-                <div>📍 Lon: {p.lon?.toFixed(6)}</div>
+            <div className="bg-[#13281f] rounded-lg p-3 border border-[#1f3d2b]">
+              <div className="text-[11px] text-green-200/80 mb-1 uppercase tracking-widest">Location</div>
+              <div className="font-mono text-sm text-green-100 space-y-1">
+                <div>LAT: {p.lat?.toFixed(6)}</div>
+                <div>LON: {p.lon?.toFixed(6)}</div>
               </div>
             </div>
 
-            <div className="bg-gray-50 rounded-lg p-3 border">
-              <div className="text-xs text-gray-600 mb-1">Source</div>
-              <div className="font-bold">{p.source}</div>
+            <div className="bg-[#13281f] rounded-lg p-3 border border-[#1f3d2b]">
+              <div className="text-[11px] text-green-200/80 mb-1 uppercase tracking-widest">Direction</div>
+              <div className="font-bold text-[#ffba08] text-lg">↗️ {directionLabel}</div>
+            </div>
+
+            <div className="bg-[#13281f] rounded-lg p-3 border border-[#1f3d2b]">
+              <div className="text-[11px] text-green-200/80 mb-1 uppercase tracking-widest">Source</div>
+              <div className="font-bold text-[#95d5b2]">{p.source}</div>
             </div>
 
             {
               <div>
-                <div className="text-xs text-gray-600 mb-2">Snapshot (Latest)</div>
+                <div className="text-[11px] text-green-200/80 mb-2 uppercase tracking-widest">Snapshot (Latest)</div>
                 <img
                   src={p.snapshot_url || "https://placehold.co/640x360/e74c3c/ffffff?text=Detection"}
                   alt="snapshot"
-                  className="rounded-lg border-2 border-red-200 cursor-zoom-in hover:border-red-400 transition shadow-lg w-full"
+                  className="rounded-lg border-2 border-[#ffba08]/60 cursor-zoom-in hover:border-[#ffba08] transition shadow-lg w-full"
                   onClick={() => onOpenImage && onOpenImage(p.snapshot_url || "https://placehold.co/640x360/e74c3c/ffffff?text=Detection")}
                 />
-                <div className="text-xs text-gray-500 mt-2 text-center">🔍 Click to zoom</div>
+                <div className="text-xs text-green-200/60 mt-2 text-center">🔍 Click to zoom</div>
               </div>
             }
           </>
         ) : (
           <>
-            <div className="bg-blue-50 rounded-lg p-3 border border-blue-200">
-              <div className="text-xs text-blue-600 mb-1">Drone ID</div>
-              <div className="font-bold text-blue-900 text-lg">{p.drone_id}</div>
+            <div className="bg-[#0f3d2e] rounded-lg p-3 border border-[#1f8a5b]/60">
+              <div className="text-[11px] text-[#74c69d] mb-1 uppercase tracking-widest">Drone ID</div>
+              <div className="font-bold text-[#95d5b2] text-lg">{p.drone_id}</div>
             </div>
 
-            <div className="bg-gray-50 rounded-lg p-3 border">
-              <div className="text-xs text-gray-600 mb-1">Status</div>
-              <div className="font-bold text-lg capitalize">{p.status}</div>
+            <div className="bg-[#13281f] rounded-lg p-3 border border-[#1f3d2b]">
+              <div className="text-[11px] text-green-200/80 mb-1 uppercase tracking-widest">Status</div>
+              <div className="font-bold text-lg capitalize text-[#95d5b2]">{p.status}</div>
             </div>
 
             <div className="grid grid-cols-2 gap-3">
-              <div className="bg-gray-50 rounded-lg p-3 border">
-                <div className="text-xs text-gray-600 mb-1">Battery</div>
-                <div className="font-bold text-lg">🔋 {p.battery}%</div>
+              <div className="bg-[#13281f] rounded-lg p-3 border border-[#1f3d2b]">
+                <div className="text-[11px] text-green-200/80 mb-1 uppercase tracking-widest">Battery</div>
+                <div className="font-bold text-lg text-[#95d5b2]">🔋 {p.battery}%</div>
               </div>
-              <div className="bg-gray-50 rounded-lg p-3 border">
-                <div className="text-xs text-gray-600 mb-1">Speed</div>
-                <div className="font-bold text-lg">⚡ {p.speed?.toFixed(1)} m/s</div>
+              <div className="bg-[#13281f] rounded-lg p-3 border border-[#1f3d2b]">
+                <div className="text-[11px] text-green-200/80 mb-1 uppercase tracking-widest">Speed</div>
+                <div className="font-bold text-lg text-[#95d5b2]">⚡ {p.speed?.toFixed(1)} m/s</div>
               </div>
             </div>
 
-            <div className="bg-gray-50 rounded-lg p-3 border">
-              <div className="text-xs text-gray-600 mb-1">Heading</div>
-              <div className="font-bold text-lg">↗️ {Math.round(p.heading || 0)}°</div>
+            <div className="bg-[#13281f] rounded-lg p-3 border border-[#1f3d2b]">
+              <div className="text-[11px] text-green-200/80 mb-1 uppercase tracking-widest">Heading</div>
+              <div className="font-bold text-lg text-[#95d5b2]">↗️ {Math.round(p.heading || 0)}° {headingToCardinal(p.heading) || ''}</div>
             </div>
 
-            <div className="bg-gray-50 rounded-lg p-3 border">
-              <div className="text-xs text-gray-600 mb-1">Position</div>
-              <div className="text-sm font-mono space-y-1">
-                <div>📍 Lat: {p.lat?.toFixed(6)}</div>
-                <div>📍 Lon: {p.lon?.toFixed(6)}</div>
-                <div>⬆️ Alt: {p.alt?.toFixed(1)} m</div>
+            <div className="bg-[#13281f] rounded-lg p-3 border border-[#1f3d2b]">
+              <div className="text-[11px] text-green-200/80 mb-1 uppercase tracking-widest">Position</div>
+              <div className="text-sm font-mono space-y-1 text-green-100">
+                <div>LAT: {p.lat?.toFixed(6)}</div>
+                <div>LON: {p.lon?.toFixed(6)}</div>
+                <div>ALT: {p.alt?.toFixed(1)} m</div>
               </div>
             </div>
           </>
@@ -1156,10 +1213,10 @@ function TestPanel() {
   const pass = results.filter(r => r.pass).length;
   const fail = results.length - pass;
   return (
-    <div className="fixed bottom-3 left-3 bg-white/95 backdrop-blur rounded-lg shadow px-3 py-2 text-xs z-50 border">
-      <div className="font-bold">Tests: <span className={fail?"text-red-600":"text-green-700"}>{pass}/{results.length} passed</span></div>
+    <div className="fixed bottom-3 left-3 bg-[#10231c]/90 backdrop-blur rounded-lg shadow-lg px-3 py-2 text-xs z-50 border border-[#1f3d2b] text-green-100">
+      <div className="font-bold">Tests: <span className={fail?"text-[#f87171]":"text-[#95d5b2]"}>{pass}/{results.length} passed</span></div>
       {fail>0 && (
-        <ul className="list-disc pl-4 mt-1 text-red-600 max-w-[260px]">
+        <ul className="list-disc pl-4 mt-1 text-[#f87171] max-w-[260px]">
           {results.filter(r=>!r.pass).map((r,i)=>(<li key={i}>{r.name}: {r.err}</li>))}
         </ul>
       )}
@@ -1391,44 +1448,47 @@ export default function App() {
   }, [tab, telemetry, detections]);
 
   return (
-    <div className="h-screen w-screen bg-gray-50 flex flex-col overflow-hidden">
+    <div className="h-screen w-screen bg-[#050d08] text-green-100 flex flex-col overflow-hidden">
       {/* Header */}
-      <div className="bg-gradient-to-r from-blue-600 to-blue-700 text-white px-6 py-4 shadow-lg">
+      <div className="bg-gradient-to-r from-[#04140d] via-[#0b1b14] to-[#12281f] px-6 py-5 border-b border-[#1f3d2b] shadow-lg">
         <div className="flex items-center justify-between">
-          <div className="flex items-center gap-3">
-            <span className="text-3xl" aria-hidden>🚁</span>
+          <div className="flex items-center gap-4">
+            <span className="text-3xl" aria-hidden>🎖️</span>
             <div>
-              <h1 className="text-2xl font-bold">USV Mission Control</h1>
-              <p className="text-sm text-blue-100">Real-time Tracking & Safety</p>
+              <h1 className="text-2xl font-extrabold tracking-wide">Tactical Defense Console</h1>
+              <p className="text-sm text-green-200/70 uppercase tracking-[0.3em]">Live Drone & Threat Fusion</p>
             </div>
           </div>
-          <div className="flex items-center gap-3 bg-white/10 backdrop-blur px-4 py-2 rounded-lg">
-            <span className="h-3 w-3 bg-green-400 rounded-full animate-pulse" aria-label="online status" />
-            <span className="text-sm font-medium">{CONFIG.WS_URL ? 'Connected' : (CONFIG.USE_SIM ? 'Demo' : 'Offline')} • {merged.length} events</span>
+          <div className="flex items-center gap-3 bg-[#13281f] px-4 py-2 rounded-lg border border-[#1f3d2b]">
+            <span className={`h-3 w-3 rounded-full animate-pulse ${CONFIG.WS_URL || CONFIG.USE_SIM ? 'bg-green-400' : 'bg-yellow-400'}`} aria-label="online status" />
+            <span className="text-sm font-medium text-green-100">
+              {CONFIG.WS_URL ? 'LINKED' : (CONFIG.USE_SIM ? 'SIM MODE' : 'OFFLINE')} • {merged.length} EVENTS
+            </span>
           </div>
         </div>
       </div>
 
       {/* Quick Actions */}
-      <div className="flex items-center gap-2 px-4 py-2 border-b bg-white">
+      <div className="flex items-center gap-3 px-6 py-3 border-b border-[#1f3d2b] bg-[#06100c]">
         <button
-          className={`px-4 py-2 rounded-lg shadow border ${tab === "offense" ? "bg-blue-600 text-white border-blue-600" : "bg-white text-gray-700 hover:bg-gray-50 border-gray-300"}`}
+          className={`px-4 py-2 rounded-lg border text-sm tracking-wide uppercase transition ${tab === "offense" ? "bg-[#0f3d2e] border-[#1f8a5b] text-[#95d5b2] shadow-lg" : "bg-transparent border-[#1f3d2b] text-green-200/70 hover:bg-[#0b1b14]"}`}
           onClick={() => setTab("offense")}
         >
           🛩️ Track Drone
         </button>
         <button
-          className={`px-4 py-2 rounded-lg shadow border ${tab === "defense" ? "bg-red-600 text-white border-red-600" : "bg-white text-gray-700 hover:bg-gray-50 border-gray-300"}`}
+          className={`px-4 py-2 rounded-lg border text-sm tracking-wide uppercase transition ${tab === "defense" ? "bg-[#3f2d14] border-[#ffba08] text-[#ffba08] shadow-lg" : "bg-transparent border-[#1f3d2b] text-green-200/70 hover:bg-[#0b1b14]"}`}
           onClick={() => setTab("defense")}
         >
-          🎯 Show Threats Only
+          🎯 Show Threats
         </button>
+        <div className="ml-auto text-[11px] text-green-200/60 font-mono">SIM {CONFIG.USE_SIM ? 'ON' : 'OFF'} • WS {CONFIG.WS_URL ? 'READY' : 'IDLE'}</div>
       </div>
 
       {/* Content */}
-      <div className="flex-1 grid grid-cols-1 lg:grid-cols-3 gap-4 p-4">
+      <div className="flex-1 grid grid-cols-1 lg:grid-cols-3 gap-6 p-6 overflow-hidden">
         {/* Map */}
-        <div className="lg:col-span-2 min-h-[420px]">
+        <div className="lg:col-span-2 min-h-[440px]">
           <MapPanel
             detections={detections}
             telemetry={telemetry}
