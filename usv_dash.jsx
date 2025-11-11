@@ -9,16 +9,19 @@ import "leaflet/dist/leaflet.css";
 const CONFIG = (() => {
   const g = (typeof window !== 'undefined' ? window : {});
   const cfg = g.__APP_CONFIG__ || {};
+  const loc = (typeof window !== 'undefined' && window.location) ? window.location : null;
+  const defaultWs = loc ? `${loc.protocol === 'https:' ? 'wss' : 'ws'}://${loc.host}/ws` : null;
+  const defaultHttp = loc ? `${loc.origin}/api/events` : null;
   let useSim = false;
   try {
-    if (typeof window !== 'undefined' && window.location && window.location.search) {
-      const sp = new URLSearchParams(window.location.search);
+    if (loc && loc.search) {
+      const sp = new URLSearchParams(loc.search);
       if (sp.get('sim') === '1') useSim = true;
     }
   } catch (_) {}
   return {
-    WS_URL: cfg.WS_URL || null,
-    HTTP_POLL_URL: cfg.HTTP_POLL_URL || null,
+    WS_URL: typeof cfg.WS_URL === 'string' ? cfg.WS_URL : defaultWs,
+    HTTP_POLL_URL: typeof cfg.HTTP_POLL_URL === 'string' ? cfg.HTTP_POLL_URL : defaultHttp,
     USE_SIM: (typeof cfg.USE_SIM === 'boolean' ? cfg.USE_SIM : useSim),
   };
 })();
@@ -100,6 +103,145 @@ function makeLRU(capacity) {
       }
     },
     clear: () => map.clear(),
+  };
+}
+
+function toRad(deg) {
+  return (deg * Math.PI) / 180;
+}
+
+function haversineDistanceMeters(lat1, lon1, lat2, lon2) {
+  if (!Number.isFinite(lat1) || !Number.isFinite(lon1) || !Number.isFinite(lat2) || !Number.isFinite(lon2)) {
+    return Infinity;
+  }
+  const R = 6371000; // meters
+  const dLat = toRad(lat2 - lat1);
+  const dLon = toRad(lon2 - lon1);
+  const a = Math.sin(dLat / 2) ** 2
+    + Math.cos(toRad(lat1)) * Math.cos(toRad(lat2)) * Math.sin(dLon / 2) ** 2;
+  const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(Math.max(0, 1 - a)));
+  return R * c;
+}
+
+function summarizeDetectionGroup(members) {
+  if (!members.length) return null;
+  let latSum = 0;
+  let lonSum = 0;
+  const categories = {};
+  let latestTsVal = -Infinity;
+  let primary = members[0];
+
+  for (const det of members) {
+    const payload = safePayload(det.payload);
+    if (Number.isFinite(payload.lat)) latSum += payload.lat;
+    if (Number.isFinite(payload.lon)) lonSum += payload.lon;
+    const cat = payload.category || "UNKNOWN";
+    categories[cat] = (categories[cat] || 0) + 1;
+    const tsVal = typeof det.ts === "number" ? det.ts : Date.parse(det.ts);
+    if (Number.isFinite(tsVal) && tsVal > latestTsVal) {
+      latestTsVal = tsVal;
+      primary = det;
+    }
+  }
+
+  const avgLat = latSum / members.length;
+  const avgLon = lonSum / members.length;
+
+  return {
+    count: members.length,
+    lat: avgLat,
+    lon: avgLon,
+    categories,
+    latestTs: Number.isFinite(latestTsVal) ? latestTsVal : Date.now(),
+    primary,
+    members,
+  };
+}
+
+function groupOverlappingDetections(detections, thresholdMeters = 150) {
+  const safe = Array.isArray(detections) ? detections : [];
+  const groups = [];
+  const used = new Set();
+
+  for (let i = 0; i < safe.length; i++) {
+    if (used.has(i)) continue;
+    const det = safe[i];
+    const payload = safePayload(det.payload);
+    if (!Number.isFinite(payload.lat) || !Number.isFinite(payload.lon)) continue;
+
+    const queue = [i];
+    const enqueued = new Set([i]);
+    const members = [];
+
+    while (queue.length) {
+      const idx = queue.pop();
+      if (used.has(idx)) continue;
+      const current = safe[idx];
+      const cp = safePayload(current.payload);
+      if (!Number.isFinite(cp.lat) || !Number.isFinite(cp.lon)) {
+        used.add(idx);
+        continue;
+      }
+      used.add(idx);
+      members.push(current);
+
+      for (let j = 0; j < safe.length; j++) {
+        if (used.has(j) || enqueued.has(j)) continue;
+        const candidate = safe[j];
+        const candPayload = safePayload(candidate.payload);
+        if (!Number.isFinite(candPayload.lat) || !Number.isFinite(candPayload.lon)) continue;
+        const dist = haversineDistanceMeters(cp.lat, cp.lon, candPayload.lat, candPayload.lon);
+        if (dist <= thresholdMeters) {
+          queue.push(j);
+          enqueued.add(j);
+        }
+      }
+    }
+
+    if (members.length > 1) {
+      const summary = summarizeDetectionGroup(members);
+      if (summary) groups.push(summary);
+    }
+  }
+
+  return groups.sort((a, b) => b.count - a.count);
+}
+
+function analyzeData(telemetry, detections) {
+  const safeTelemetry = Array.isArray(telemetry) ? telemetry : [];
+  const safeDetections = Array.isArray(detections) ? detections : [];
+
+  const uniqueDrones = new Set();
+  let speedSum = 0;
+  let speedCount = 0;
+  for (const evt of safeTelemetry) {
+    const payload = safePayload(evt.payload);
+    if (payload.drone_id) uniqueDrones.add(payload.drone_id);
+    if (Number.isFinite(payload.speed)) {
+      speedSum += payload.speed;
+      speedCount += 1;
+    }
+  }
+
+  const detectionCategories = {};
+  for (const det of safeDetections) {
+    const payload = safePayload(det.payload);
+    const cat = payload.category || "UNKNOWN";
+    detectionCategories[cat] = (detectionCategories[cat] || 0) + 1;
+  }
+
+  const overlaps = groupOverlappingDetections(safeDetections);
+
+  return {
+    summary: {
+      totalTelemetry: safeTelemetry.length,
+      totalDetections: safeDetections.length,
+      uniqueDrones: uniqueDrones.size,
+      avgSpeed: speedCount ? speedSum / speedCount : 0,
+      hasSpeedSamples: speedCount > 0,
+    },
+    detectionCategories,
+    overlaps,
   };
 }
 
@@ -285,6 +427,20 @@ function Tabs({ value, onChange }) {
 /**
  * ========================= UI: Map Panel =========================
  */
+function jitterCoordinates(lat, lon, tracker, key) {
+  if (!Number.isFinite(lat) || !Number.isFinite(lon)) return [lat, lon];
+  const bucket = key || `${lat.toFixed(4)},${lon.toFixed(4)}`;
+  const count = tracker.get(bucket) || 0;
+  tracker.set(bucket, count + 1);
+  if (count === 0) return [lat, lon];
+  const radius = 0.0003 * count; // roughly ~30m per step
+  const angle = (count * 137.508) * Math.PI / 180;
+  return [
+    lat + radius * Math.sin(angle),
+    lon + radius * Math.cos(angle),
+  ];
+}
+
 function MapPanel({ detections, telemetry, onSelectItem, filter, forecast }) {
   const mapDivRef = useRef(null);
   const mapRef = useRef(null);
@@ -347,11 +503,14 @@ function MapPanel({ detections, telemetry, onSelectItem, filter, forecast }) {
     detLayer.clearLayers();
     windLayer.clearLayers();
 
+    const jitterTracker = new Map();
+
     if (showTelemetry) {
       safeTelemetry.forEach((t) => {
         const p = safePayload(t.payload);
         if (typeof p.lat === 'number' && typeof p.lon === 'number') {
-          const m = L.circleMarker([p.lat, p.lon], {
+          const [jLat, jLon] = jitterCoordinates(p.lat, p.lon, jitterTracker);
+          const m = L.circleMarker([jLat, jLon], {
             radius: 6,
             color: '#2563eb',
             weight: 2,
@@ -368,7 +527,8 @@ function MapPanel({ detections, telemetry, onSelectItem, filter, forecast }) {
       safeDetections.forEach((d) => {
         const p = safePayload(d.payload);
         if (typeof p.lat === 'number' && typeof p.lon === 'number') {
-          const m = L.circleMarker([p.lat, p.lon], {
+          const [jLat, jLon] = jitterCoordinates(p.lat, p.lon, jitterTracker);
+          const m = L.circleMarker([jLat, jLon], {
             radius: 7,
             color: '#dc2626',
             weight: 2,
@@ -612,6 +772,83 @@ function FeedPanel({ items, onSelect, filter }) {
         <div className="text-center py-12 text-gray-400">
           <div className="text-4xl mb-2">📭</div>
           <div>No data</div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+/**
+ * ========================= UI: Analytics Panel =========================
+ */
+function AnalyticsPanel({ analytics, onSelect }) {
+  if (!analytics) return null;
+  const { summary, detectionCategories, overlaps } = analytics;
+  const categoryEntries = Object.entries(detectionCategories || {});
+
+  return (
+    <div className="space-y-3">
+      <div className="grid grid-cols-2 gap-3">
+        <div className="rounded-lg border bg-white p-3 shadow-sm">
+          <div className="text-xs text-gray-500 uppercase">Active Drones</div>
+          <div className="text-2xl font-bold text-blue-600">{summary.uniqueDrones}</div>
+          <div className="text-xs text-gray-500 mt-1">Telemetry {summary.totalTelemetry}</div>
+        </div>
+        <div className="rounded-lg border bg-white p-3 shadow-sm">
+          <div className="text-xs text-gray-500 uppercase">Threat Detections</div>
+          <div className="text-2xl font-bold text-red-600">{summary.totalDetections}</div>
+          <div className="text-xs text-gray-500 mt-1">
+            Avg Speed {summary.hasSpeedSamples ? `${summary.avgSpeed.toFixed(1)} m/s` : '—'}
+          </div>
+        </div>
+      </div>
+
+      <div className="rounded-lg border bg-white p-3 shadow-sm">
+        <div className="text-xs text-gray-500 uppercase">Categories</div>
+        <div className="flex flex-wrap gap-2 mt-2">
+          {categoryEntries.length === 0 && (
+            <span className="text-xs text-gray-500">No detections yet</span>
+          )}
+          {categoryEntries.map(([cat, count]) => (
+            <span
+              key={cat}
+              className="px-2 py-1 text-xs rounded-full border border-red-200 bg-red-50 text-red-700"
+            >
+              {cat} • {count}
+            </span>
+          ))}
+        </div>
+      </div>
+
+      {overlaps.length > 0 && (
+        <div className="rounded-lg border bg-white p-3 shadow-sm">
+          <div className="text-xs text-gray-500 uppercase">Overlapping Threat Areas</div>
+          <ul className="mt-2 space-y-2">
+            {overlaps.slice(0, 5).map((group, idx) => (
+              <li key={idx}>
+                <button
+                  type="button"
+                  onClick={() => onSelect && onSelect(group.primary)}
+                  className="w-full text-left bg-red-50/60 hover:bg-red-100 border border-red-200 rounded-lg px-3 py-2 transition"
+                >
+                  <div className="text-sm font-semibold text-red-700">
+                    Cluster #{idx + 1} • {group.count} detections
+                  </div>
+                  <div className="text-xs text-gray-600 mt-1">
+                    📍 {group.lat.toFixed(4)}, {group.lon.toFixed(4)}
+                  </div>
+                  <div className="text-xs text-gray-500 mt-1 flex flex-wrap gap-2">
+                    {Object.entries(group.categories).map(([cat, count]) => (
+                      <span key={cat}>{cat}: {count}</span>
+                    ))}
+                  </div>
+                  <div className="text-[10px] text-gray-400 mt-1">
+                    Latest: {formatLocal(tsToDate(group.latestTs))}
+                  </div>
+                </button>
+              </li>
+            ))}
+          </ul>
         </div>
       )}
     </div>
@@ -891,6 +1128,26 @@ function runTests() {
     if (!('USE_SIM' in CONFIG)) throw new Error('CONFIG.USE_SIM missing');
   });
 
+  // NEW: overlap grouping sanity
+  push("groupOverlappingDetections clusters nearby points", () => {
+    const base = Date.now();
+    const dets = [
+      { id: '1', ts: base, type: 'detection:new', payload: { detection_id: 'd1', lat: 10, lon: 20 } },
+      { id: '2', ts: base + 1000, type: 'detection:new', payload: { detection_id: 'd2', lat: 10.0005, lon: 20.0004 } },
+      { id: '3', ts: base + 2000, type: 'detection:new', payload: { detection_id: 'd3', lat: 11, lon: 21 } },
+    ];
+    const groups = groupOverlappingDetections(dets, 200);
+    if (groups.length !== 1 || groups[0].count !== 2) throw new Error('overlap grouping failed');
+  });
+
+  // NEW: analyzeData handles empty inputs
+  push("analyzeData handles empty", () => {
+    const res = analyzeData([], []);
+    if (!res.summary || res.summary.totalTelemetry !== 0 || res.summary.hasSpeedSamples !== false) {
+      throw new Error('analyzeData summary incorrect');
+    }
+  });
+
   return tests;
 }
 
@@ -1070,6 +1327,7 @@ export default function App() {
   }, [onTelemetry, onDetection]);
 
   const merged = useMemo(() => buf.snapshot(), [buf.version]);
+  const analytics = useMemo(() => analyzeData(telemetry, detections), [telemetry, detections]);
 
   const handleSelect = useCallback((it) => {
     if (it && it.type) {
@@ -1181,8 +1439,13 @@ export default function App() {
         </div>
 
         {/* Feed */}
-        <div className="lg:col-span-1 overflow-auto">
-          <FeedPanel items={merged} onSelect={handleSelect} filter={tab} />
+        <div className="lg:col-span-1 flex flex-col gap-4 overflow-hidden">
+          <div className="shrink-0">
+            <AnalyticsPanel analytics={analytics} onSelect={handleSelect} />
+          </div>
+          <div className="flex-1 overflow-auto pr-1">
+            <FeedPanel items={merged} onSelect={handleSelect} filter={tab} />
+          </div>
         </div>
       </div>
 
