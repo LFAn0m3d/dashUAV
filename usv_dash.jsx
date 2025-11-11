@@ -123,6 +123,34 @@ function haversineDistanceMeters(lat1, lon1, lat2, lon2) {
   return R * c;
 }
 
+function bearingBetween(lat1, lon1, lat2, lon2) {
+  if (!Number.isFinite(lat1) || !Number.isFinite(lon1) || !Number.isFinite(lat2) || !Number.isFinite(lon2)) {
+    return null;
+  }
+  const phi1 = toRad(lat1);
+  const phi2 = toRad(lat2);
+  const dLon = toRad(lon2 - lon1);
+  const y = Math.sin(dLon) * Math.cos(phi2);
+  const x = Math.cos(phi1) * Math.sin(phi2) - Math.sin(phi1) * Math.cos(phi2) * Math.cos(dLon);
+  const bearing = (Math.atan2(y, x) * 180) / Math.PI;
+  return (bearing + 360) % 360;
+}
+
+function headingDifference(a, b) {
+  if (!Number.isFinite(a) || !Number.isFinite(b)) return null;
+  let diff = (a - b) % 360;
+  if (diff > 180) diff -= 360;
+  if (diff < -180) diff += 360;
+  return Math.abs(diff);
+}
+
+function bearingToCardinal(bearing) {
+  if (!Number.isFinite(bearing)) return "ไม่ทราบ";
+  const dirs = ["N", "NE", "E", "SE", "S", "SW", "W", "NW"];
+  const idx = Math.round(bearing / 45) % dirs.length;
+  return dirs[idx];
+}
+
 function summarizeDetectionGroup(members) {
   if (!members.length) return null;
   let latSum = 0;
@@ -441,7 +469,7 @@ function jitterCoordinates(lat, lon, tracker, key) {
   ];
 }
 
-function MapPanel({ detections, telemetry, onSelectItem, filter, forecast }) {
+function MapPanel({ detections, telemetry, onSelectItem, filter, forecast, title, subtitle, icon }) {
   const mapDivRef = useRef(null);
   const mapRef = useRef(null);
   const droneLayerRef = useRef(null);
@@ -589,10 +617,10 @@ function MapPanel({ detections, telemetry, onSelectItem, filter, forecast }) {
       {/* Map title */}
       <div className="absolute top-3 left-3 bg-white/95 backdrop-blur px-3 py-2 rounded-lg shadow-md z-10">
         <div className="font-bold text-gray-800 flex items-center gap-2">
-          <span className="text-lg">🗺️</span>
-          <span>Live Map (OpenStreetMap)</span>
+          <span className="text-lg">{icon || '🗺️'}</span>
+          <span>{title || 'Live Map (OpenStreetMap)'}</span>
         </div>
-        <div className="text-xs text-gray-600 mt-1">Bangkok, Thailand</div>
+        <div className="text-xs text-gray-600 mt-1">{subtitle || 'Bangkok, Thailand'}</div>
         {forecast && (
           <div className="mt-2 text-xs">
             <span className={`px-2 py-0.5 rounded font-semibold ${forecast.goNoGo === 'GO' ? 'bg-green-100 text-green-700' : forecast.goNoGo === 'CAUTION' ? 'bg-yellow-100 text-yellow-700' : 'bg-red-100 text-red-700'}`}>
@@ -781,76 +809,247 @@ function FeedPanel({ items, onSelect, filter }) {
 /**
  * ========================= UI: Analytics Panel =========================
  */
-function AnalyticsPanel({ analytics, onSelect }) {
+function AnalyticsPanel({ analytics, onSelect, forecast }) {
   if (!analytics) return null;
   const { summary, detectionCategories, overlaps } = analytics;
   const categoryEntries = Object.entries(detectionCategories || {});
 
   return (
-    <div className="space-y-3">
-      <div className="grid grid-cols-2 gap-3">
-        <div className="rounded-lg border bg-white p-3 shadow-sm">
-          <div className="text-xs text-gray-500 uppercase">Active Drones</div>
-          <div className="text-2xl font-bold text-blue-600">{summary.uniqueDrones}</div>
-          <div className="text-xs text-gray-500 mt-1">Telemetry {summary.totalTelemetry}</div>
+    <div className="bg-white border rounded-xl shadow-sm h-full flex flex-col">
+      <div className="px-4 py-3 border-b flex items-center justify-between">
+        <div>
+          <h2 className="font-semibold text-gray-800">แดชบอร์ดรวม</h2>
+          <p className="text-xs text-gray-500">ภาพรวมสถานการณ์ฝั่งบุกและรับแบบเรียลไทม์</p>
         </div>
-        <div className="rounded-lg border bg-white p-3 shadow-sm">
-          <div className="text-xs text-gray-500 uppercase">Threat Detections</div>
-          <div className="text-2xl font-bold text-red-600">{summary.totalDetections}</div>
-          <div className="text-xs text-gray-500 mt-1">
-            Avg Speed {summary.hasSpeedSamples ? `${summary.avgSpeed.toFixed(1)} m/s` : '—'}
+        <div className="text-xs text-gray-400">อัปเดต {formatLocal(new Date())}</div>
+      </div>
+
+      <div className="p-4 space-y-4 flex-1 overflow-auto">
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+          <div className="rounded-lg border bg-blue-50/80 border-blue-200 p-3">
+            <div className="text-xs font-semibold text-blue-600 uppercase tracking-wide">โดรนปฏิบัติการ</div>
+            <div className="text-3xl font-bold text-blue-700 mt-1">{summary.uniqueDrones}</div>
+            <div className="text-xs text-blue-600 mt-1">เฟรมเทเลเมทรี {summary.totalTelemetry}</div>
+            <div className="text-xs text-blue-600 mt-1">ความเร็วเฉลี่ย {summary.hasSpeedSamples ? `${summary.avgSpeed.toFixed(1)} m/s` : "ไม่ทราบ"}</div>
+          </div>
+          <div className="rounded-lg border bg-red-50/80 border-red-200 p-3">
+            <div className="text-xs font-semibold text-red-600 uppercase tracking-wide">ภัยคุกคามที่ตรวจพบ</div>
+            <div className="text-3xl font-bold text-red-700 mt-1">{summary.totalDetections}</div>
+            <div className="text-xs text-red-600 mt-1">ข้อมูลสอดแนม {categoryEntries.length}</div>
+            <div className="text-xs text-red-600 mt-1">จุดซ้อนทับ {overlaps.length}</div>
           </div>
         </div>
-      </div>
 
-      <div className="rounded-lg border bg-white p-3 shadow-sm">
-        <div className="text-xs text-gray-500 uppercase">Categories</div>
-        <div className="flex flex-wrap gap-2 mt-2">
-          {categoryEntries.length === 0 && (
-            <span className="text-xs text-gray-500">No detections yet</span>
-          )}
-          {categoryEntries.map(([cat, count]) => (
-            <span
-              key={cat}
-              className="px-2 py-1 text-xs rounded-full border border-red-200 bg-red-50 text-red-700"
-            >
-              {cat} • {count}
-            </span>
-          ))}
-        </div>
-      </div>
+        {forecast && (
+          <div className="rounded-lg border border-emerald-200 bg-emerald-50 p-3">
+            <div className="flex items-center justify-between">
+              <div>
+                <div className="text-xs text-emerald-700">GO/NO-GO</div>
+                <div className="text-lg font-semibold text-emerald-700">{forecast.goNoGo}</div>
+              </div>
+              <div className="text-xs text-emerald-700 text-right">
+                ลม {forecast.wind?.sfc_ms?.toFixed?.(1)} m/s • {forecast.wind?.sfc_deg}°<br />
+                วิสัยทัศน์ {forecast.vis_km?.toFixed?.(1)} กม.
+              </div>
+            </div>
+          </div>
+        )}
 
-      {overlaps.length > 0 && (
-        <div className="rounded-lg border bg-white p-3 shadow-sm">
-          <div className="text-xs text-gray-500 uppercase">Overlapping Threat Areas</div>
-          <ul className="mt-2 space-y-2">
-            {overlaps.slice(0, 5).map((group, idx) => (
-              <li key={idx}>
-                <button
-                  type="button"
-                  onClick={() => onSelect && onSelect(group.primary)}
-                  className="w-full text-left bg-red-50/60 hover:bg-red-100 border border-red-200 rounded-lg px-3 py-2 transition"
-                >
-                  <div className="text-sm font-semibold text-red-700">
-                    Cluster #{idx + 1} • {group.count} detections
-                  </div>
-                  <div className="text-xs text-gray-600 mt-1">
-                    📍 {group.lat.toFixed(4)}, {group.lon.toFixed(4)}
-                  </div>
-                  <div className="text-xs text-gray-500 mt-1 flex flex-wrap gap-2">
-                    {Object.entries(group.categories).map(([cat, count]) => (
-                      <span key={cat}>{cat}: {count}</span>
-                    ))}
-                  </div>
-                  <div className="text-[10px] text-gray-400 mt-1">
-                    Latest: {formatLocal(tsToDate(group.latestTs))}
-                  </div>
-                </button>
-              </li>
+        <div className="rounded-lg border bg-white p-3">
+          <div className="text-xs text-gray-600 font-semibold uppercase tracking-wide">ประเภทภัยคุกคาม</div>
+          <div className="flex flex-wrap gap-2 mt-2">
+            {categoryEntries.length === 0 && (
+              <span className="text-xs text-gray-500">ยังไม่มีการตรวจพบ</span>
+            )}
+            {categoryEntries.map(([cat, count]) => (
+              <span
+                key={cat}
+                className="px-2 py-1 text-xs rounded-full border border-red-200 bg-red-50 text-red-700"
+              >
+                {cat} • {count}
+              </span>
             ))}
-          </ul>
+          </div>
         </div>
-      )}
+
+        {overlaps.length > 0 && (
+          <div className="rounded-lg border bg-white p-3">
+            <div className="text-xs text-gray-600 font-semibold uppercase tracking-wide">จุดคุกคามซ้ำซ้อน</div>
+            <ul className="mt-2 space-y-2">
+              {overlaps.slice(0, 5).map((group, idx) => (
+                <li key={idx}>
+                  <button
+                    type="button"
+                    onClick={() => onSelect && onSelect(group.primary)}
+                    className="w-full text-left bg-red-50/60 hover:bg-red-100 border border-red-200 rounded-lg px-3 py-2 transition"
+                  >
+                    <div className="text-sm font-semibold text-red-700">
+                      จุดที่ {idx + 1} • {group.count} การตรวจพบ
+                    </div>
+                    <div className="text-xs text-gray-600 mt-1">
+                      📍 {group.lat.toFixed(4)}, {group.lon.toFixed(4)}
+                    </div>
+                    <div className="text-xs text-gray-500 mt-1 flex flex-wrap gap-2">
+                      {Object.entries(group.categories).map(([cat, count]) => (
+                        <span key={cat}>{cat}: {count}</span>
+                      ))}
+                    </div>
+                    <div className="text-[10px] text-gray-400 mt-1">
+                      ล่าสุด {formatLocal(tsToDate(group.latestTs))}
+                    </div>
+                  </button>
+                </li>
+              ))}
+            </ul>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+/**
+ * ========================= UI: Offense Dashboard =========================
+ */
+function OffenseDashboard({ telemetry, onSelect }) {
+  const drones = useMemo(() => {
+    const map = new Map();
+    (Array.isArray(telemetry) ? telemetry : []).forEach((evt) => {
+      const payload = safePayload(evt.payload);
+      if (!payload.drone_id) return;
+      const arr = map.get(payload.drone_id) || [];
+      arr.push(evt);
+      map.set(payload.drone_id, arr);
+    });
+    return Array.from(map.entries()).map(([id, events]) => {
+      const ordered = [...events].sort(byTsDesc);
+      const latest = ordered[0];
+      const previous = ordered.length > 1 ? ordered[1] : null;
+      const latestPayload = safePayload(latest?.payload);
+      const previousPayload = safePayload(previous?.payload);
+      let pathStatus = null;
+      if (previousPayload && Number.isFinite(previousPayload.lat) && Number.isFinite(previousPayload.lon)
+        && Number.isFinite(latestPayload.lat) && Number.isFinite(latestPayload.lon)) {
+        const expected = bearingBetween(previousPayload.lat, previousPayload.lon, latestPayload.lat, latestPayload.lon);
+        const diff = headingDifference(latestPayload.heading, expected);
+        if (diff !== null) {
+          pathStatus = diff <= 35 ? 'on_path' : 'off_path';
+        }
+      }
+
+      const signalRaw = latestPayload.signal_quality ?? latestPayload.link_quality ?? latestPayload.signal;
+      let signalText = 'ปกติ';
+      if (typeof signalRaw === 'number') {
+        const pct = signalRaw > 1 ? signalRaw : signalRaw * 100;
+        if (pct >= 80) signalText = 'แรง';
+        else if (pct >= 50) signalText = 'ปานกลาง';
+        else signalText = 'อ่อน';
+      } else if (typeof signalRaw === 'string') {
+        signalText = signalRaw;
+      }
+
+      return {
+        id,
+        latest,
+        previous,
+        latestPayload,
+        pathStatus,
+        signalText,
+      };
+    });
+  }, [telemetry]);
+
+  return (
+    <div className="bg-white border rounded-xl shadow-sm">
+      <div className="px-4 py-3 border-b flex items-center justify-between">
+        <h2 className="font-semibold text-gray-800">แดชบอร์ดฝั่งบุก</h2>
+        <span className="text-xs text-gray-500">{drones.length} ลำ</span>
+      </div>
+      <div className="p-4 space-y-3">
+        {drones.length === 0 && (
+          <div className="text-sm text-gray-500">ยังไม่มีโดรนปฏิบัติการ</div>
+        )}
+        {drones.map(({ id, latest, latestPayload, pathStatus, signalText }) => (
+          <button
+            key={id}
+            type="button"
+            onClick={() => onSelect && onSelect(latest)}
+            className="w-full text-left border border-blue-100 bg-blue-50/50 hover:bg-blue-100 rounded-lg px-3 py-3 transition"
+          >
+            <div className="flex items-center justify-between">
+              <div className="text-lg font-semibold text-blue-700">{id}</div>
+              <div className="text-xs text-gray-500">{formatLocal(tsToDate(latest?.ts))}</div>
+            </div>
+            <div className="mt-2 grid grid-cols-2 gap-2 text-sm text-gray-700">
+              <div>สถานะ: {latestPayload.status || 'ไม่ทราบ'}</div>
+              <div>แบตเตอรี่: {latestPayload.battery ?? '—'}%</div>
+              <div>ความเร็ว: {Number.isFinite(latestPayload.speed) ? `${latestPayload.speed.toFixed(1)} m/s` : '—'}</div>
+              <div>ระดับบิน: {Number.isFinite(latestPayload.alt) ? `${latestPayload.alt.toFixed(0)} m` : '—'}</div>
+              <div>หัวมุ่ง: {Number.isFinite(latestPayload.heading) ? `${Math.round(latestPayload.heading)}°` : '—'}</div>
+              <div>สัญญาณควบคุม: {signalText}</div>
+            </div>
+            <div className="mt-2 text-xs text-gray-600">เซนเซอร์หลัก: {latestPayload.sensors || 'IMU / EO / IR'}</div>
+            <div className="mt-2">
+              {pathStatus === null && (
+                <span className="text-xs text-gray-500">กำลังคำนวณเส้นทาง...</span>
+              )}
+              {pathStatus === 'on_path' && (
+                <span className="text-xs font-semibold text-green-700 bg-green-100 px-2 py-1 rounded-full">อยู่ในเส้นทาง</span>
+              )}
+              {pathStatus === 'off_path' && (
+                <span className="text-xs font-semibold text-red-700 bg-red-100 px-2 py-1 rounded-full">ออกนอกเส้นทาง</span>
+              )}
+            </div>
+          </button>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+/**
+ * ========================= UI: Defense Dashboard =========================
+ */
+function DefenseDashboard({ detections, onSelect }) {
+  const base = { lat: 13.7563, lon: 100.5018 };
+  const recent = useMemo(() => {
+    const arr = Array.isArray(detections) ? [...detections] : [];
+    return arr.sort(byTsDesc).slice(0, 6);
+  }, [detections]);
+
+  return (
+    <div className="bg-white border rounded-xl shadow-sm">
+      <div className="px-4 py-3 border-b flex items-center justify-between">
+        <h2 className="font-semibold text-gray-800">แดชบอร์ดฝั่งรับ</h2>
+        <span className="text-xs text-gray-500">{recent.length} เหตุการณ์ล่าสุด</span>
+      </div>
+      <div className="p-4 space-y-3">
+        {recent.length === 0 && (
+          <div className="text-sm text-gray-500">ยังไม่มีการรายงานจากกล้องเฝ้าระวัง</div>
+        )}
+        {recent.map((det) => {
+          const payload = safePayload(det.payload);
+          const bearing = bearingBetween(base.lat, base.lon, payload.lat, payload.lon);
+          const direction = bearingToCardinal(bearing);
+          const distance = haversineDistanceMeters(base.lat, base.lon, payload.lat, payload.lon);
+          return (
+            <button
+              key={det.id}
+              type="button"
+              onClick={() => onSelect && onSelect(det)}
+              className="w-full text-left border border-red-100 bg-red-50/50 hover:bg-red-100 rounded-lg px-3 py-3 transition"
+            >
+              <div className="flex items-center justify-between">
+                <div className="font-semibold text-red-700">{payload.category || 'ภัยคุกคาม'}</div>
+                <div className="text-xs text-gray-500">{formatLocal(tsToDate(det.ts))}</div>
+              </div>
+              <div className="mt-1 text-sm text-gray-700">กล้อง: {payload.source || 'ไม่ทราบ'}</div>
+              <div className="mt-1 text-sm text-gray-700">พิกัด: {Number.isFinite(payload.lat) ? payload.lat.toFixed(5) : '—'}, {Number.isFinite(payload.lon) ? payload.lon.toFixed(5) : '—'}</div>
+              <div className="mt-1 text-xs text-gray-600">ทิศ {direction} ({Number.isFinite(bearing) ? `${Math.round(bearing)}°` : '—'}) • ระยะ {Number.isFinite(distance) ? `${(distance/1000).toFixed(2)} กม.` : 'ไม่ทราบ'}</div>
+            </button>
+          );
+        })}
+      </div>
     </div>
   );
 }
@@ -1172,12 +1371,13 @@ function TestPanel() {
  */
 export default function App() {
   // UI states
-  const [tab, setTab] = useState("offense"); // offense | defense | null
   const [selected, setSelected] = useState(null);
+  const [lastSelected, setLastSelected] = useState(null);
   const [viewer, setViewer] = useState({ open: false, src: "" });
   const [telemetry, setTelemetry] = useState([]);
   const [detections, setDetections] = useState([]);
   const [forecast, setForecast] = useState(null);
+  const [feedFilter, setFeedFilter] = useState(null); // null | 'offense' | 'defense'
 
   const buf = useEventBuffer({ capFeed: 400, capIndex: 2000, flushMs: 120 });
 
@@ -1328,12 +1528,15 @@ export default function App() {
 
   const merged = useMemo(() => buf.snapshot(), [buf.version]);
   const analytics = useMemo(() => analyzeData(telemetry, detections), [telemetry, detections]);
+  const summary = analytics?.summary || { totalTelemetry: 0, totalDetections: 0, uniqueDrones: 0, avgSpeed: 0, hasSpeedSamples: false };
 
   const handleSelect = useCallback((it) => {
-    if (it && it.type) {
-      setSelected(it);
-    } else if (it && it.data) {
-      setSelected(it.data);
+    let payload = null;
+    if (it && it.type) payload = it;
+    else if (it && it.data) payload = it.data;
+    if (payload) {
+      setSelected(payload);
+      setLastSelected(payload);
     }
   }, []);
 
@@ -1376,80 +1579,195 @@ export default function App() {
 
   useEffect(() => {
     let point = null;
-    if (tab === 'offense' && telemetry.length) {
-      const p = telemetry[telemetry.length-1]?.payload || {};
-      if (typeof p.lat === 'number' && typeof p.lon === 'number') point = { lat: p.lat, lon: p.lon };
-    } else if (tab === 'defense' && detections.length) {
-      const p = detections[detections.length-1]?.payload || {};
-      if (typeof p.lat === 'number' && typeof p.lon === 'number') point = { lat: p.lat, lon: p.lon };
+    if (selected) {
+      const payload = safePayload(selected.payload);
+      if (Number.isFinite(payload.lat) && Number.isFinite(payload.lon)) {
+        point = { lat: payload.lat, lon: payload.lon };
+      }
+    }
+    if (!point && telemetry.length) {
+      const p = safePayload(telemetry[telemetry.length - 1]?.payload);
+      if (Number.isFinite(p.lat) && Number.isFinite(p.lon)) point = { lat: p.lat, lon: p.lon };
+    }
+    if (!point && detections.length) {
+      const p = safePayload(detections[detections.length - 1]?.payload);
+      if (Number.isFinite(p.lat) && Number.isFinite(p.lon)) point = { lat: p.lat, lon: p.lon };
     }
     if (!point) { setForecast(null); return; }
+    let cancelled = false;
     (async () => {
       const f = await fetchOpenMeteo(point);
-      setForecast(f);
+      if (!cancelled) setForecast(f);
     })();
-  }, [tab, telemetry, detections]);
+    return () => { cancelled = true; };
+  }, [selected, telemetry, detections]);
 
   return (
-    <div className="h-screen w-screen bg-gray-50 flex flex-col overflow-hidden">
-      {/* Header */}
-      <div className="bg-gradient-to-r from-blue-600 to-blue-700 text-white px-6 py-4 shadow-lg">
-        <div className="flex items-center justify-between">
+    <div className="h-screen w-screen bg-gray-100 flex flex-col overflow-hidden">
+      <div className="bg-gradient-to-r from-blue-700 via-blue-600 to-indigo-700 text-white px-6 py-5 shadow-lg">
+        <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
           <div className="flex items-center gap-3">
-            <span className="text-3xl" aria-hidden>🚁</span>
+            <span className="text-3xl" aria-hidden>🛰️</span>
             <div>
-              <h1 className="text-2xl font-bold">USV Mission Control</h1>
-              <p className="text-sm text-blue-100">Real-time Tracking & Safety</p>
+              <h1 className="text-2xl font-bold">USV Battle Command Center</h1>
+              <p className="text-sm text-blue-100">ภาพรวมสนามรบแบบเรียลไทม์สำหรับผู้บังคับบัญชา</p>
             </div>
           </div>
-          <div className="flex items-center gap-3 bg-white/10 backdrop-blur px-4 py-2 rounded-lg">
-            <span className="h-3 w-3 bg-green-400 rounded-full animate-pulse" aria-label="online status" />
-            <span className="text-sm font-medium">{CONFIG.WS_URL ? 'Connected' : (CONFIG.USE_SIM ? 'Demo' : 'Offline')} • {merged.length} events</span>
+          <div className="flex flex-wrap items-center gap-3">
+            <div className="px-3 py-2 bg-white/10 rounded-lg border border-white/20">
+              <div className="text-[10px] uppercase tracking-wide text-blue-100">โดรนปฏิบัติการ</div>
+              <div className="text-lg font-semibold">{summary.uniqueDrones}</div>
+            </div>
+            <div className="px-3 py-2 bg-white/10 rounded-lg border border-white/20">
+              <div className="text-[10px] uppercase tracking-wide text-blue-100">ภัยคุกคาม</div>
+              <div className="text-lg font-semibold">{summary.totalDetections}</div>
+            </div>
+            <div className="px-3 py-2 bg-white/10 rounded-lg border border-white/20">
+              <div className="text-[10px] uppercase tracking-wide text-blue-100">เหตุการณ์ทั้งหมด</div>
+              <div className="text-lg font-semibold">{merged.length}</div>
+            </div>
+            <div className="flex items-center gap-2 px-3 py-2 bg-emerald-500/20 rounded-lg border border-emerald-300/40">
+              <span className={`h-3 w-3 rounded-full ${CONFIG.WS_URL ? 'bg-green-300 animate-pulse' : CONFIG.USE_SIM ? 'bg-yellow-200 animate-pulse' : 'bg-red-300'}`} aria-label="online status" />
+              <span className="text-sm font-medium">{CONFIG.WS_URL ? 'Connected' : (CONFIG.USE_SIM ? 'Simulation' : 'Offline')}</span>
+            </div>
           </div>
         </div>
       </div>
 
-      {/* Quick Actions */}
-      <div className="flex items-center gap-2 px-4 py-2 border-b bg-white">
-        <button
-          className={`px-4 py-2 rounded-lg shadow border ${tab === "offense" ? "bg-blue-600 text-white border-blue-600" : "bg-white text-gray-700 hover:bg-gray-50 border-gray-300"}`}
-          onClick={() => setTab("offense")}
-        >
-          🛩️ Track Drone
-        </button>
-        <button
-          className={`px-4 py-2 rounded-lg shadow border ${tab === "defense" ? "bg-red-600 text-white border-red-600" : "bg-white text-gray-700 hover:bg-gray-50 border-gray-300"}`}
-          onClick={() => setTab("defense")}
-        >
-          🎯 Show Threats Only
-        </button>
+      <div className="flex-1 overflow-auto">
+        <div className="p-4 space-y-6">
+          <section className="grid grid-cols-1 xl:grid-cols-3 gap-4">
+            <div className="xl:col-span-2">
+              <div className="bg-white border rounded-xl shadow-sm h-full flex flex-col">
+                <div className="px-4 py-3 border-b flex items-center justify-between">
+                  <h2 className="font-semibold text-gray-800">แผนที่รวมสนามรบ</h2>
+                  <span className="text-xs text-gray-500">{summary.uniqueDrones} โดรน • {summary.totalDetections} ภัยคุกคาม</span>
+                </div>
+                <div className="relative h-[360px] lg:h-[420px]">
+                  <MapPanel
+                    detections={detections}
+                    telemetry={telemetry}
+                    onSelectItem={handleSelect}
+                    filter={null}
+                    forecast={forecast}
+                    title="แผนที่ภาพรวม"
+                    subtitle="รวมเส้นทางฝั่งบุกและจุดคุกคาม"
+                    icon="🗺️"
+                  />
+                </div>
+              </div>
+            </div>
+            <div className="xl:col-span-1 min-h-[360px]">
+              <AnalyticsPanel analytics={analytics} onSelect={handleSelect} forecast={forecast} />
+            </div>
+          </section>
+
+          <section className="grid grid-cols-1 xl:grid-cols-2 gap-4">
+            <div className="space-y-4">
+              <div className="bg-white border rounded-xl shadow-sm">
+                <div className="px-4 py-3 border-b font-semibold text-gray-800 flex items-center gap-2">
+                  <span aria-hidden>🛩️</span>
+                  <span>แผนที่ฝั่งบุก</span>
+                </div>
+                <div className="relative h-[300px] lg:h-[320px]">
+                  <MapPanel
+                    detections={detections}
+                    telemetry={telemetry}
+                    onSelectItem={handleSelect}
+                    filter="offense"
+                    forecast={null}
+                    title="เส้นทางโดรนปฏิบัติการ"
+                    subtitle="เน้นการเคลื่อนที่ของฝั่งบุก"
+                    icon="🛩️"
+                  />
+                </div>
+              </div>
+              <OffenseDashboard telemetry={telemetry} onSelect={handleSelect} />
+            </div>
+            <div className="space-y-4">
+              <div className="bg-white border rounded-xl shadow-sm">
+                <div className="px-4 py-3 border-b font-semibold text-gray-800 flex items-center gap-2">
+                  <span aria-hidden>🎯</span>
+                  <span>แผนที่ฝั่งรับ</span>
+                </div>
+                <div className="relative h-[300px] lg:h-[320px]">
+                  <MapPanel
+                    detections={detections}
+                    telemetry={telemetry}
+                    onSelectItem={handleSelect}
+                    filter="defense"
+                    forecast={null}
+                    title="จุดตรวจพบภัยคุกคาม"
+                    subtitle="ข้อมูลจากกล้องและเรดาร์ฝั่งรับ"
+                    icon="🎯"
+                  />
+                </div>
+              </div>
+              <DefenseDashboard detections={detections} onSelect={handleSelect} />
+            </div>
+          </section>
+
+          <section className="grid grid-cols-1 xl:grid-cols-3 gap-4">
+            <div className="xl:col-span-2 bg-white border rounded-xl shadow-sm flex flex-col">
+              <div className="px-4 py-3 border-b flex flex-col lg:flex-row lg:items-center lg:justify-between gap-3">
+                <div>
+                  <h2 className="font-semibold text-gray-800">บันทึกเหตุการณ์</h2>
+                  <p className="text-xs text-gray-500">รวมการสื่อสารและการแจ้งเตือนล่าสุด</p>
+                </div>
+                <div className="flex items-center gap-2">
+                  {[{ id: null, label: 'ทั้งหมด' }, { id: 'offense', label: 'ฝั่งบุก' }, { id: 'defense', label: 'ฝั่งรับ' }].map((f) => (
+                    <button
+                      key={f.id === null ? 'all' : f.id}
+                      onClick={() => setFeedFilter(f.id)}
+                      className={`px-3 py-1 rounded-full border text-xs font-medium transition ${feedFilter === f.id ? 'bg-blue-600 text-white border-blue-600' : 'bg-white text-gray-700 border-gray-300 hover:bg-gray-50'}`}
+                    >
+                      {f.label}
+                    </button>
+                  ))}
+                </div>
+              </div>
+              <div className="flex-1 overflow-auto px-4 py-3">
+                <FeedPanel items={merged} onSelect={handleSelect} filter={feedFilter} />
+              </div>
+            </div>
+            <div className="space-y-4">
+              <div className="bg-white border rounded-xl shadow-sm">
+                <div className="px-4 py-3 border-b font-semibold text-gray-800">การเลือกปัจจุบัน</div>
+                <div className="p-4 text-sm text-gray-600 space-y-3">
+                  {lastSelected ? (
+                    <>
+                      <div className="flex items-center gap-2 text-base font-semibold text-gray-800">
+                        <span aria-hidden>{lastSelected.type?.startsWith('detection') ? '🎯' : '🛩️'}</span>
+                        <span>{lastSelected.type?.startsWith('detection') ? 'ข้อมูลฝั่งรับ' : 'ข้อมูลฝั่งบุก'}</span>
+                      </div>
+                      <TimeStampBlock ts={lastSelected.ts} />
+                      {(() => {
+                        const payload = safePayload(lastSelected.payload);
+                        return (
+                          <div className="space-y-1 text-xs text-gray-600">
+                            <div>พิกัด: {Number.isFinite(payload.lat) ? payload.lat.toFixed(5) : '—'}, {Number.isFinite(payload.lon) ? payload.lon.toFixed(5) : '—'}</div>
+                            {payload.category && <div>ประเภท: {payload.category}</div>}
+                            {payload.drone_id && <div>โดรน: {payload.drone_id}</div>}
+                          </div>
+                        );
+                      })()}
+                      <button
+                        onClick={() => setSelected(lastSelected)}
+                        className="mt-2 inline-flex items-center gap-1 text-xs text-blue-600 hover:text-blue-800"
+                      >
+                        เปิดรายละเอียดเต็ม ↗
+                      </button>
+                    </>
+                  ) : (
+                    <div className="text-xs text-gray-500">แตะที่โดรนหรือการแจ้งเตือนเพื่อดูรายละเอียดทันที</div>
+                  )}
+                </div>
+              </div>
+            </div>
+          </section>
+        </div>
       </div>
 
-      {/* Content */}
-      <div className="flex-1 grid grid-cols-1 lg:grid-cols-3 gap-4 p-4">
-        {/* Map */}
-        <div className="lg:col-span-2 min-h-[420px]">
-          <MapPanel
-            detections={detections}
-            telemetry={telemetry}
-            onSelectItem={handleSelect}
-            filter={tab}
-            forecast={forecast}
-          />
-        </div>
-
-        {/* Feed */}
-        <div className="lg:col-span-1 flex flex-col gap-4 overflow-hidden">
-          <div className="shrink-0">
-            <AnalyticsPanel analytics={analytics} onSelect={handleSelect} />
-          </div>
-          <div className="flex-1 overflow-auto pr-1">
-            <FeedPanel items={merged} onSelect={handleSelect} filter={tab} />
-          </div>
-        </div>
-      </div>
-
-      {/* Drawer */}
       <DetailDrawer
         item={selected}
         onClose={() => setSelected(null)}
@@ -1457,14 +1775,12 @@ export default function App() {
         forecast={forecast}
       />
 
-      {/* Image Viewer */}
       <ImageViewer
         isOpen={viewer.open}
         src={viewer.src}
         onClose={() => setViewer({ open: false, src: "" })}
       />
 
-      {/* Runtime tests */}
       <TestPanel />
     </div>
   );
