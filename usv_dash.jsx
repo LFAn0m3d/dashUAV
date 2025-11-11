@@ -9,16 +9,19 @@ import "leaflet/dist/leaflet.css";
 const CONFIG = (() => {
   const g = (typeof window !== 'undefined' ? window : {});
   const cfg = g.__APP_CONFIG__ || {};
+  const loc = (typeof window !== 'undefined' && window.location) ? window.location : null;
+  const defaultWs = loc ? `${loc.protocol === 'https:' ? 'wss' : 'ws'}://${loc.host}/ws` : null;
+  const defaultHttp = loc ? `${loc.origin}/api/events` : null;
   let useSim = false;
   try {
-    if (typeof window !== 'undefined' && window.location && window.location.search) {
-      const sp = new URLSearchParams(window.location.search);
+    if (loc && loc.search) {
+      const sp = new URLSearchParams(loc.search);
       if (sp.get('sim') === '1') useSim = true;
     }
   } catch (_) {}
   return {
-    WS_URL: cfg.WS_URL || null,
-    HTTP_POLL_URL: cfg.HTTP_POLL_URL || null,
+    WS_URL: typeof cfg.WS_URL === 'string' ? cfg.WS_URL : defaultWs,
+    HTTP_POLL_URL: typeof cfg.HTTP_POLL_URL === 'string' ? cfg.HTTP_POLL_URL : defaultHttp,
     USE_SIM: (typeof cfg.USE_SIM === 'boolean' ? cfg.USE_SIM : useSim),
   };
 })();
