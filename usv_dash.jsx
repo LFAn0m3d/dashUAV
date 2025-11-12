@@ -27,6 +27,17 @@ const makeId = () => {
 };
 const now = () => Date.now();
 
+const DEFENSE_DRONE_PATTERNS = [/BLUE/i, /GOLD/i, /ALLY/i];
+const classifyDroneSide = (id) => {
+  if (!id) return "offense";
+  return DEFENSE_DRONE_PATTERNS.some((re) => re.test(id)) ? "defense" : "offense";
+};
+
+const classifyDetectionSide = (source) => {
+  if (!source) return "offense";
+  return /A/i.test(source) ? "defense" : "offense";
+};
+
 // Deterministic key for events so React list rendering is stable
 function eventKey(evt) {
   if (!evt) return "";
@@ -127,16 +138,50 @@ function MapView({ center, items, trackTarget, onReady }) {
 }
 
 // ---------- Panels ----------
-function StatPill({ label, value }) {
+function StatPill({ label, value, accent }) {
+  const accentStyles = accent
+    ? {
+        accent: accent.accent ?? "#1f2937",
+        soft: accent.soft ?? "#f3f4f6",
+        muted: accent.muted ?? "#4b5563",
+      }
+    : null;
+  const style = accentStyles
+    ? {
+        borderColor: accentStyles.accent,
+        backgroundColor: accentStyles.soft,
+        color: accentStyles.accent,
+      }
+    : undefined;
+  const labelStyle = accentStyles ? { color: accentStyles.muted } : undefined;
   return (
-    <div className="px-3 py-2 rounded-xl bg-gray-50 border text-sm flex items-center gap-2">
-      <span className="text-gray-500">{label}</span>
+    <div
+      className="px-3 py-2 rounded-xl border text-sm flex items-center gap-2"
+      style={style}
+    >
+      <span className="text-gray-500" style={labelStyle}>
+        {label}
+      </span>
       <span className="font-semibold">{value}</span>
     </div>
   );
 }
 
-function Sidebar({ telemetry, detections, filterThreats, onPick, selected }) {
+function Sidebar({
+  telemetry,
+  detections,
+  filterThreats,
+  onPick,
+  selected,
+  titles,
+  accent,
+}) {
+  const accentStyles = accent ?? {
+    accent: "#1f2937",
+    muted: "#4b5563",
+    soft: "#f9fafb",
+    border: "#e5e7eb",
+  };
   const tel = useMemo(() => telemetry.slice().sort((a,b) => b.ts - a.ts), [telemetry]);
   const det = useMemo(() => detections.slice().sort((a,b) => b.ts - a.ts), [detections]);
   const detFiltered = filterThreats ? det.filter(d => (d.payload?.category ?? "").toUpperCase() !== "UNKNOWN") : det;
@@ -144,29 +189,79 @@ function Sidebar({ telemetry, detections, filterThreats, onPick, selected }) {
   return (
     <div className="space-y-3">
       <div className="bg-white border rounded-xl shadow-sm">
-        <div className="px-4 py-3 border-b font-semibold">ดรอน (Telemetry)</div>
+        <div
+          className="px-4 py-3 border-b font-semibold"
+          style={{
+            backgroundColor: accentStyles.soft,
+            borderColor: accentStyles.border,
+            color: accentStyles.accent,
+          }}
+        >
+          {titles?.telemetry ?? "ดรอน (Telemetry)"}
+        </div>
         <div className="p-3 divide-y max-h-60 overflow-auto">
-          {tel.map((t) => (
-            <button key={eventKey(t)} onClick={() => onPick?.(t)} className={`w-full text-left py-2 ${selected?.payload?.drone_id===t.payload?.drone_id?"bg-blue-50":""}`}>
-              <div className="font-semibold">{t.payload?.drone_id}</div>
-              <div className="text-xs text-gray-600">📍 {t.payload?.lat?.toFixed(5)}, {t.payload?.lon?.toFixed(5)} • {Math.round(t.payload?.speed ?? 0)} m/s</div>
-            </button>
-          ))}
+          {tel.map((t) => {
+            const isActive = selected?.payload?.drone_id === t.payload?.drone_id;
+            return (
+              <button
+                key={eventKey(t)}
+                onClick={() => onPick?.(t)}
+                className="w-full text-left py-2 px-2 rounded-lg transition"
+                style={
+                  isActive
+                    ? {
+                        backgroundColor: accentStyles.soft,
+                        color: accentStyles.accent,
+                        boxShadow: "inset 0 0 0 1px " + accentStyles.border,
+                      }
+                    : undefined
+                }
+              >
+                <div className="font-semibold">{t.payload?.drone_id}</div>
+                <div className="text-xs text-gray-600">📍 {t.payload?.lat?.toFixed(5)}, {t.payload?.lon?.toFixed(5)} • {Math.round(t.payload?.speed ?? 0)} m/s</div>
+              </button>
+            );
+          })}
         </div>
       </div>
 
       <div className="bg-white border rounded-xl shadow-sm">
-        <div className="px-4 py-3 border-b font-semibold flex items-center justify-between">
-          <span>ภัยคุกคาม (Detections)</span>
+        <div
+          className="px-4 py-3 border-b font-semibold flex items-center justify-between"
+          style={{
+            backgroundColor: accentStyles.soft,
+            borderColor: accentStyles.border,
+            color: accentStyles.accent,
+          }}
+        >
+          <span>{titles?.detections ?? "ภัยคุกคาม (Detections)"}</span>
           <span className="text-xs text-gray-500">{detFiltered.length}</span>
         </div>
         <div className="p-3 divide-y max-h-60 overflow-auto">
-          {detFiltered.map((d) => (
-            <button key={eventKey(d)} onClick={() => onPick?.(d)} className={`w-full text-left py-2 ${selected?.payload?.detection_id===d.payload?.detection_id?"bg-red-50":""}`}>
-              <div className="font-semibold text-red-700">{d.payload?.category}</div>
-              <div className="text-xs text-gray-600">📍 {d.payload?.lat?.toFixed(5)}, {d.payload?.lon?.toFixed(5)} • ✓ {Math.round((d.payload?.confidence ?? 0)*100)}%</div>
-            </button>
-          ))}
+          {detFiltered.map((d) => {
+            const isActive = selected?.payload?.detection_id === d.payload?.detection_id;
+            return (
+              <button
+                key={eventKey(d)}
+                onClick={() => onPick?.(d)}
+                className="w-full text-left py-2 px-2 rounded-lg transition"
+                style={
+                  isActive
+                    ? {
+                        backgroundColor: accentStyles.soft,
+                        color: accentStyles.accent,
+                        boxShadow: "inset 0 0 0 1px " + accentStyles.border,
+                      }
+                    : undefined
+                }
+              >
+                <div className="font-semibold" style={{ color: accentStyles.accent }}>
+                  {d.payload?.category}
+                </div>
+                <div className="text-xs text-gray-600">📍 {d.payload?.lat?.toFixed(5)}, {d.payload?.lon?.toFixed(5)} • ✓ {Math.round((d.payload?.confidence ?? 0)*100)}%</div>
+              </button>
+            );
+          })}
         </div>
       </div>
     </div>
@@ -177,9 +272,33 @@ function Sidebar({ telemetry, detections, filterThreats, onPick, selected }) {
 export default function App() {
   const [telemetry, setTelemetry] = useState([]);
   const [detections, setDetections] = useState([]);
-  const [selected, setSelected] = useState(null);
-  const [track, setTrack] = useState(true);
-  const [onlyThreats, setOnlyThreats] = useState(false);
+  const [activeSide, setActiveSide] = useState("defense");
+  const [selectedBySide, setSelectedBySide] = useState({ defense: null, offense: null });
+  const [viewPrefs, setViewPrefs] = useState({
+    defense: { track: true, onlyThreats: false },
+    offense: { track: true, onlyThreats: false },
+  });
+
+  const SIDE_STYLES = useMemo(() => ({
+    defense: {
+      accent: "#047857",
+      muted: "#0f5132",
+      soft: "#ecfdf5",
+      border: "#a7f3d0",
+      label: "ฝั่งรับ",
+      description: "ภาพรวมหน่วยตรวจการณ์และป้องกันภัยคุกคาม",
+      center: { lat: 13.7563, lon: 100.5018 },
+    },
+    offense: {
+      accent: "#b91c1c",
+      muted: "#7f1d1d",
+      soft: "#fef2f2",
+      border: "#fecaca",
+      label: "ฝั่งรุก",
+      description: "ภาพรวมหน่วยโจมตีและเข้าตีเชิงรุก",
+      center: { lat: 13.8563, lon: 100.7018 },
+    },
+  }), []);
 
   // Ingest from simulator
   useSimulator({
@@ -201,60 +320,192 @@ export default function App() {
     return [...m.values()].sort((a,b) => b.ts - a.ts);
   }, [telemetry]);
 
-  const threats = useMemo(() => {
-    return detections.filter(d => (d.payload?.category ?? "").toUpperCase() !== "UNKNOWN");
-  }, [detections]);
-
-  const mapItems = useMemo(() => {
-    const a = latestByDrone.map(t => ({ type: "telemetry", lat: t.payload?.lat, lon: t.payload?.lon }));
-    const b = (onlyThreats ? threats : detections).map(d => ({ type: "detection", lat: d.payload?.lat, lon: d.payload?.lon }));
-    return [...a, ...b];
-  }, [latestByDrone, detections, onlyThreats, threats]);
-
-  const trackTarget = useMemo(() => {
-    if (!track || latestByDrone.length === 0) return null;
-    return { lat: latestByDrone[0].payload?.lat, lon: latestByDrone[0].payload?.lon };
-  }, [track, latestByDrone]);
-
-  // UI selections
-  const pick = useCallback((it) => setSelected(it), []);
-
-  // quick stats
-  const totalKm = useMemo(() => {
-    if (latestByDrone.length < 2) return "—";
-    const d = haversine(
-      { lat: latestByDrone[0].payload?.lat, lon: latestByDrone[0].payload?.lon },
-      { lat: latestByDrone[latestByDrone.length-1].payload?.lat, lon: latestByDrone[latestByDrone.length-1].payload?.lon },
-    );
-    return d ? (d/1000).toFixed(2)+" กม." : "—";
+  const telemetryBySide = useMemo(() => {
+    const bucket = { defense: [], offense: [] };
+    for (const t of latestByDrone) {
+      const side = classifyDroneSide(t.payload?.drone_id);
+      bucket[side].push(t);
+    }
+    return bucket;
   }, [latestByDrone]);
 
+  const detectionsBySide = useMemo(() => {
+    const bucket = { defense: [], offense: [] };
+    for (const d of detections) {
+      const side = classifyDetectionSide(d.payload?.source);
+      bucket[side].push(d);
+    }
+    return bucket;
+  }, [detections]);
+
+  const threatsBySide = useMemo(() => {
+    const next = { defense: [], offense: [] };
+    for (const side of ["defense", "offense"]) {
+      next[side] = detectionsBySide[side].filter(
+        (d) => (d.payload?.category ?? "").toUpperCase() !== "UNKNOWN"
+      );
+    }
+    return next;
+  }, [detectionsBySide]);
+
+  const meta = SIDE_STYLES[activeSide];
+  const currentPrefs = viewPrefs[activeSide];
+  const currentSelected = selectedBySide[activeSide];
+  const sideTelemetry = telemetryBySide[activeSide] ?? [];
+  const sideDetections = detectionsBySide[activeSide] ?? [];
+  const sideThreats = threatsBySide[activeSide] ?? [];
+
+  const mapItems = useMemo(() => {
+    const aircraft = sideTelemetry.map((t) => ({
+      type: "telemetry",
+      lat: t.payload?.lat,
+      lon: t.payload?.lon,
+    }));
+    const detectionsList = currentPrefs.onlyThreats ? sideThreats : sideDetections;
+    const hostile = detectionsList.map((d) => ({
+      type: "detection",
+      lat: d.payload?.lat,
+      lon: d.payload?.lon,
+    }));
+    return [...aircraft, ...hostile];
+  }, [sideTelemetry, sideDetections, sideThreats, currentPrefs.onlyThreats]);
+
+  const trackTarget = useMemo(() => {
+    if (!currentPrefs.track || sideTelemetry.length === 0) return null;
+    return {
+      lat: sideTelemetry[0].payload?.lat,
+      lon: sideTelemetry[0].payload?.lon,
+    };
+  }, [currentPrefs.track, sideTelemetry]);
+
+  const totalKm = useMemo(() => {
+    if (sideTelemetry.length < 2) return "—";
+    const d = haversine(
+      { lat: sideTelemetry[0].payload?.lat, lon: sideTelemetry[0].payload?.lon },
+      {
+        lat: sideTelemetry[sideTelemetry.length - 1].payload?.lat,
+        lon: sideTelemetry[sideTelemetry.length - 1].payload?.lon,
+      },
+    );
+    return d ? (d / 1000).toFixed(2) + " กม." : "—";
+  }, [sideTelemetry]);
+
+  const pick = useCallback(
+    (item) => {
+      setSelectedBySide((prev) => ({ ...prev, [activeSide]: item }));
+    },
+    [activeSide],
+  );
+
+  const updatePref = useCallback(
+    (key, value) => {
+      setViewPrefs((prev) => ({
+        ...prev,
+        [activeSide]: { ...prev[activeSide], [key]: value },
+      }));
+    },
+    [activeSide],
+  );
+
   return (
-    <div className="p-4 md:p-6 max-w-7xl mx-auto space-y-4">
-      <div className="flex flex-col md:flex-row gap-4">
-        <div className="md:w-2/3">
-          <div className="bg-white border rounded-xl shadow-sm p-3 md:p-4">
-            <div className="flex items-center justify-between mb-3">
-              <div className="font-semibold">DashUAV – Realtime Map (Sim)</div>
-              <div className="flex items-center gap-2">
-                <label className="flex items-center gap-2 text-sm"><input type="checkbox" checked={track} onChange={e=>setTrack(e.target.checked)} /> Track Drone</label>
-                <label className="flex items-center gap-2 text-sm"><input type="checkbox" checked={onlyThreats} onChange={e=>setOnlyThreats(e.target.checked)} /> Show Threats Only</label>
-              </div>
-            </div>
-            <MapView center={{ lat: 13.7563, lon: 100.5018 }} items={mapItems} trackTarget={trackTarget} />
-            <div className="mt-3 flex gap-2">
-              <StatPill label="Drones" value={latestByDrone.length} />
-              <StatPill label="Detections" value={detections.length} />
-              <StatPill label="Threats" value={threats.length} />
-              <StatPill label="Span" value={totalKm} />
-            </div>
-          </div>
+    <div className="p-4 md:p-6 max-w-7xl mx-auto space-y-5">
+      <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-3">
+        <div>
+          <div className="text-xl font-semibold">DashUAV – เปรียบเทียบยุทธการสองฝั่ง</div>
+          <div className="text-sm text-gray-600">สลับดูสถานการณ์ระหว่างฝั่งรับและฝั่งรุก พร้อมแผนที่เฉพาะของแต่ละทีม</div>
         </div>
-        <div className="md:w-1/3">
-          <Sidebar telemetry={latestByDrone} detections={detections} filterThreats={onlyThreats} onPick={pick} selected={selected} />
+        <div className="flex gap-2">
+          {(["defense", "offense"]).map((sideKey) => {
+            const info = SIDE_STYLES[sideKey];
+            const isActive = activeSide === sideKey;
+            return (
+              <button
+                key={sideKey}
+                onClick={() => setActiveSide(sideKey)}
+                className={`px-4 py-2 rounded-full border text-sm font-semibold transition`}
+                style={{
+                  backgroundColor: isActive ? info.accent : "#ffffff",
+                  color: isActive ? "#ffffff" : "#4b5563",
+                  borderColor: isActive ? info.accent : "#d1d5db",
+                  boxShadow: isActive ? "0 10px 20px -12px rgba(0,0,0,0.4)" : "none",
+                }}
+              >
+                {info.label}
+              </button>
+            );
+          })}
         </div>
       </div>
-      <div className="text-xs text-gray-500">* Demo is simulated. Integrate with your backend by replacing <code>useSimulator</code> with a realtime hook (WebSocket/HTTP).</div>
+
+      <div className="bg-white border rounded-2xl shadow-lg overflow-hidden">
+        <div className="h-1" style={{ backgroundColor: meta.accent }} />
+        <div className="p-4 md:p-6 space-y-5">
+          <div className="flex flex-col md:flex-row gap-4">
+            <div className="md:w-2/3 space-y-4">
+              <div>
+                <div className="text-lg font-semibold" style={{ color: meta.accent }}>{meta.label}</div>
+                <div className="text-sm text-gray-600">{meta.description}</div>
+              </div>
+              <div className="flex flex-wrap items-center gap-4 text-sm">
+                <label className="flex items-center gap-2">
+                  <input
+                    type="checkbox"
+                    checked={currentPrefs.track}
+                    onChange={(e) => updatePref("track", e.target.checked)}
+                  />
+                  ติดตามอากาศยาน
+                </label>
+                <label className="flex items-center gap-2">
+                  <input
+                    type="checkbox"
+                    checked={currentPrefs.onlyThreats}
+                    onChange={(e) => updatePref("onlyThreats", e.target.checked)}
+                  />
+                  แสดงเฉพาะภัยคุกคาม
+                </label>
+              </div>
+              <MapView
+                key={activeSide}
+                center={meta.center}
+                items={mapItems}
+                trackTarget={trackTarget}
+              />
+              <div className="flex flex-wrap gap-2">
+                <StatPill label="Drones" value={sideTelemetry.length} accent={meta} />
+                <StatPill label="Detections" value={sideDetections.length} accent={meta} />
+                <StatPill label="Threats" value={sideThreats.length} accent={meta} />
+                <StatPill label="Span" value={totalKm} accent={meta} />
+              </div>
+            </div>
+            <div className="md:w-1/3">
+              <Sidebar
+                telemetry={sideTelemetry}
+                detections={sideDetections}
+                filterThreats={currentPrefs.onlyThreats}
+                onPick={pick}
+                selected={currentSelected}
+                titles={{
+                  telemetry: `${meta.label} – โดรน`,
+                  detections: `${meta.label} – การตรวจจับ`,
+                }}
+                accent={meta}
+              />
+            </div>
+          </div>
+          {currentSelected && (
+            <div className="bg-gray-50 border rounded-xl p-4 text-sm space-y-1">
+              <div className="font-semibold text-gray-700">จุดที่เลือก</div>
+              <div className="text-gray-600">
+                {currentSelected.type?.includes("telemetry")
+                  ? `โดรน ${currentSelected.payload?.drone_id} – ${currentSelected.payload?.lat?.toFixed(5)}, ${currentSelected.payload?.lon?.toFixed(5)}`
+                  : `การตรวจจับ ${currentSelected.payload?.category ?? "UNKNOWN"} – ${currentSelected.payload?.lat?.toFixed(5)}, ${currentSelected.payload?.lon?.toFixed(5)}`}
+              </div>
+            </div>
+          )}
+        </div>
+      </div>
+
+      <div className="text-xs text-gray-500">* Demo จำลองข้อมูล เพื่อเชื่อมต่อระบบจริงสามารถแทนที่ <code>useSimulator</code> ด้วย hook ที่เชื่อมต่อ Backend/Realtime</div>
     </div>
   );
 }
