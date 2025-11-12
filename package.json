@@ -1,0 +1,14 @@
+{
+  "name": "dashuav-monorepo",
+  "version": "0.2.0",
+  "private": true,
+  "workspaces": [
+    "apps/*"
+  ],
+  "scripts": {
+    "build": "npm run build -w apps/ui",
+    "dev": "npm run dev -w apps/ui",
+    "start:api": "npm run start -w apps/api",
+    "test": "npm run test -w apps/api"
+  }
+}

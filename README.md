@@ -1,40 +1,63 @@
 # DashUAV
 
-DashUAV now ships with a lightweight backend that can ingest live telemetry and detection events and stream them to the React dashboard.
+DashUAV is organised as an npm workspace with separate packages for the React control centre and the backend API.
 
-## Backend
+```
+.
+├─ apps/
+│  ├─ ui/        # Vite + React + Router + Tailwind + shadcn/ui primitives
+│  └─ api/       # Express backend exposing REST and WebSocket streams
+├─ package.json  # npm workspaces definition
+└─ .env          # Runtime configuration (API keys, map tokens, ...)
+```
 
-The backend lives in [`server/`](server/) and exposes both REST and WebSocket interfaces.
+## Frontend (`apps/ui`)
 
-### Features
-
-- `POST /api/telemetry` and `POST /api/detections` accept JSON payloads (single object or array) and normalise them into the dashboard event format.
-- `POST /api/events` lets you push pre-formatted events in bulk.
-- `GET /api/events`, `/api/telemetry`, and `/api/detections` expose the recent buffers for polling clients.
-- A WebSocket endpoint at `/ws` streams every accepted event to connected clients in real time.
-- Buffers sizes are capped via environment variables (`MAX_EVENTS`, `MAX_TELEMETRY`, `MAX_DETECTIONS`).
-
-### Running locally
+The UI is built with Vite, React Router, Tailwind CSS, Zustand, and lightweight shadcn/ui primitives. The project bootstraps a
+multi-page dashboard including views for the mission overview, map, threats, data exports, settings, and authentication.
 
 ```bash
-cd server
 npm install
 npm run dev
 ```
 
-By default the backend listens on port `8080`. You can override the port with the `PORT` environment variable. The service responds to `GET /healthz` with a simple health payload.
+The commands above install dependencies for every workspace and start the Vite dev server on port `5173`. To build or preview
+production assets use:
 
-When the backend and frontend are served from the same origin, the dashboard will automatically connect to `ws://<host>/ws` or `https://<host>/api/events` without any extra configuration. You can override the defaults by setting `window.__APP_CONFIG__` before mounting the React app, for example:
-
-```html
-<script>
-  window.__APP_CONFIG__ = {
-    WS_URL: "wss://dash.example.com/ws",
-    HTTP_POLL_URL: "https://dash.example.com/api/events",
-    USE_SIM: false,
-  };
-</script>
+```bash
+npm run build
+npm run preview --workspace apps/ui
 ```
+
+Tailwind is configured via `tailwind.config.js` and reads environment variables from `.env`. Do not hard-code API tokens in the
+codebase—define them in `.env` or inject them at runtime through `window.__APP_CONFIG__`.
+
+## Backend (`apps/api`)
+
+The backend is an Express service that accepts telemetry and detection payloads and streams them to connected clients (either by
+polling or via WebSocket).
+
+```bash
+npm run dev --workspace apps/api
+```
+
+### Features
+
+- `POST /api/telemetry` and `POST /api/detections` accept JSON payloads (single object or array) and normalise them into events.
+- `POST /api/events` lets you push pre-formatted events in bulk.
+- `GET /api/events`, `/api/telemetry`, and `/api/detections` expose the recent buffers for polling clients.
+- A WebSocket endpoint at `/ws` streams every accepted event to connected clients in real time.
+- Buffer sizes are configurable via environment variables (`MAX_EVENTS`, `MAX_TELEMETRY`, `MAX_DETECTIONS`).
+
+The backend listens on port `8080` by default. Override the port with the `PORT` environment variable.
+
+### Testing
+
+```bash
+npm test
+```
+
+This runs the Node.js test suite inside `apps/api/test`.
 
 ### Posting sample data
 
@@ -54,6 +77,5 @@ curl -X POST http://localhost:8080/api/telemetry \
   }'
 ```
 
-## Frontend
-
-The React dashboard remains in [`usv_dash.jsx`](usv_dash.jsx). When no backend configuration is provided it can still run in simulator mode by opening the page with `?sim=1`.
+When the backend and frontend are served from the same origin, the dashboard automatically connects to `ws://<host>/ws` or
+`https://<host>/api/events`. Override the defaults by setting `window.__APP_CONFIG__` before mounting the React app.
