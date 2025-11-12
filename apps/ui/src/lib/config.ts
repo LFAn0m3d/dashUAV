@@ -15,7 +15,9 @@ const defaultConfig: Required<Pick<AppConfig, 'HTTP_POLL_URL'>> & AppConfig = {
   HTTP_POLL_URL: '/api/events',
 };
 
-export function getAppConfig(): AppConfig {
+type ResolvedAppConfig = AppConfig & Required<Pick<AppConfig, 'HTTP_POLL_URL'>>;
+
+export function getAppConfig(): ResolvedAppConfig {
   return {
     ...defaultConfig,
     ...(typeof window !== 'undefined' ? window.__APP_CONFIG__ : undefined),
@@ -23,3 +25,4 @@ export function getAppConfig(): AppConfig {
 }
 
 export type { AppConfig };
+export type { ResolvedAppConfig };

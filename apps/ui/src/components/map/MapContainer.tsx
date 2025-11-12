@@ -1,7 +1,6 @@
-// src/components/map/MapContainer.tsx
+import { useEffect, useRef } from 'react';
 import 'maplibre-gl/dist/maplibre-gl.css';
-import Map, { Marker } from 'react-map-gl';
-import maplibregl from 'maplibre-gl';
+import maplibregl, { type StyleSpecification } from 'maplibre-gl';
 
 type Props = {
   center?: { lon: number; lat: number };
@@ -10,37 +9,78 @@ type Props = {
   className?: string;
 };
 
+const mapStyle: StyleSpecification = {
+  version: 8,
+  sources: {
+    osm: {
+      type: 'raster',
+      tiles: ['https://tile.openstreetmap.org/{z}/{x}/{y}.png'],
+      tileSize: 256,
+      attribution: '© OpenStreetMap contributors',
+    },
+  },
+  layers: [{ id: 'osm', type: 'raster', source: 'osm' }],
+};
+
 export default function MapContainer({
   center = { lon: 100.5018, lat: 13.7563 },
   zoom = 7,
   showMarkerAtCenter = true,
   className,
 }: Props) {
-  return (
-    <div className={className ?? ''} style={{ width: '100%', height: '100%' }}>
-      <Map
-        /** ใช้ MapLibre แทน Mapbox */
-        mapLib={maplibregl as any}
-        initialViewState={{ longitude: center.lon, latitude: center.lat, zoom }}
-        style={{ width: '100%', height: '100%' }}
-        /** ใช้ OSM raster tiles (ไม่ต้องใช้ token) */
-        mapStyle={{
-          version: 8,
-          sources: {
-            osm: {
-              type: 'raster',
-              tiles: ['https://tile.openstreetmap.org/{z}/{x}/{y}.png'],
-              tileSize: 256,
-              attribution: '© OpenStreetMap contributors',
-            },
-          },
-          layers: [{ id: 'osm', type: 'raster', source: 'osm' }],
-        }}
-      >
-        {showMarkerAtCenter && (
-          <Marker longitude={center.lon} latitude={center.lat} />
-        )}
-      </Map>
-    </div>
-  );
+  const containerRef = useRef<HTMLDivElement | null>(null);
+  const mapRef = useRef<maplibregl.Map | null>(null);
+  const markerRef = useRef<maplibregl.Marker | null>(null);
+
+  useEffect(() => {
+    if (!containerRef.current || mapRef.current) {
+      return;
+    }
+
+    const map = new maplibregl.Map({
+      container: containerRef.current,
+      style: mapStyle,
+      center: [center.lon, center.lat],
+      zoom,
+    });
+
+    mapRef.current = map;
+
+    map.addControl(new maplibregl.NavigationControl({ showCompass: false }), 'top-right');
+
+    return () => {
+      markerRef.current?.remove();
+      map.remove();
+      mapRef.current = null;
+    };
+  }, [center.lat, center.lon, zoom]);
+
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map) {
+      return;
+    }
+
+    map.setCenter([center.lon, center.lat]);
+    map.setZoom(zoom);
+  }, [center.lat, center.lon, zoom]);
+
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map) {
+      return;
+    }
+
+    if (!showMarkerAtCenter) {
+      markerRef.current?.remove();
+      markerRef.current = null;
+      return;
+    }
+
+    const marker = markerRef.current ?? new maplibregl.Marker({ color: '#2563eb' });
+    marker.setLngLat([center.lon, center.lat]).addTo(map);
+    markerRef.current = marker;
+  }, [center.lat, center.lon, showMarkerAtCenter]);
+
+  return <div ref={containerRef} className={className ?? ''} style={{ width: '100%', height: '100%' }} />;
 }

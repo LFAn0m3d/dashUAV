@@ -10,7 +10,7 @@ function Dashboard() {
   const totals = useMemo(() => {
     const telemetry = events.filter((event) => event.type.startsWith('telemetry'));
     const detections = events.filter((event) => event.type.startsWith('detection'));
-    const latest = events.at(-1);
+    const latest = events.length ? events[events.length - 1] : undefined;
 
     return {
       events: events.length,
